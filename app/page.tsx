@@ -353,13 +353,46 @@ function MiniDropZone({ label, onFile, success }: { label: string; onFile: (f: F
   useEffect(() => { if (success) { setDone(true); setTimeout(() => setDone(false), 3000) } }, [success])
   const handle = useCallback((f: File) => { if (f.name.endsWith('.csv') || f.type === 'text/csv') { onFile(f); setDone(true); setTimeout(() => setDone(false), 3000) } }, [onFile])
   return (
-    <button onClick={() => ref.current?.click()}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all"
-      style={done ? { borderColor: '#16A34A', backgroundColor: '#F0FDF4', color: '#16A34A' } : { borderColor: '#EDE9E4', backgroundColor: 'white', color: '#78716C' }}>
-      <input ref={ref} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) handle(f); e.target.value = '' }} />
-      {done ? <Check className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5 text-[#C7BFB8]" />}
-      {done ? 'Updated!' : label}
-    </button>
+    <>
+      <input ref={ref} type="file" accept=".csv" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) handle(f); e.target.value = '' }} />
+      <button onClick={() => ref.current?.click()}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all"
+        style={done ? { borderColor: '#16A34A', backgroundColor: '#F0FDF4', color: '#16A34A' } : { borderColor: '#EDE9E4', backgroundColor: 'white', color: '#78716C' }}>
+        {done ? <Check className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5 text-[#C7BFB8]" />}
+        {done ? 'Updated!' : label}
+      </button>
+    </>
+  )
+}
+
+// UploadCard used in add-member form — must be its own component so useRef is valid
+function UploadCard({ type, label, hint, loaded, onFile }: {
+  type: 'posts' | 'icp'; label: string; hint: string; loaded: boolean
+  onFile: (f: File, type: 'posts' | 'icp') => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  return (
+    <div onClick={() => ref.current?.click()}
+      className="border-2 border-dashed rounded-xl p-5 cursor-pointer transition-all text-center"
+      style={loaded ? { borderColor: '#16A34A', backgroundColor: '#F0FDF4' } : { borderColor: '#E7E0D8', backgroundColor: '#FAFAF9' }}>
+      <input ref={ref} type="file" accept=".csv" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f, type); e.target.value = '' }} />
+      {loaded ? (
+        <>
+          <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-1.5">
+            <span className="text-green-600 font-bold text-sm">✓</span>
+          </div>
+          <p className="text-sm font-medium text-green-700">{label} loaded</p>
+        </>
+      ) : (
+        <>
+          <Upload className="w-5 h-5 text-[#C7BFB8] mx-auto mb-1.5" />
+          <p className="text-sm font-medium text-[#78716C]">{label}</p>
+          <p className="text-xs text-[#A8A29E] mt-0.5">{hint}</p>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -377,6 +410,8 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
   const [newRole, setNewRole] = useState('')
   const [newPosts, setNewPosts] = useState<Post[]>([])
   const [newPostsLoaded, setNewPostsLoaded] = useState(false)
+  const [newIcpSignals, setNewIcpSignals] = useState<ICPSignal[]>([])
+  const [newIcpLoaded, setNewIcpLoaded] = useState(false)
   const [addError, setAddError] = useState('')
   const [showInstructions, setShowInstructions] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -412,8 +447,11 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
       try {
         if (type === 'posts') {
           const posts = parseLinkedInCSV(text)
-          if (posts.length === 0) { setAddError('No valid post data found'); return }
+          if (posts.length === 0) { setAddError('No valid post data found. Make sure it\'s a LinkedIn Analytics 90-day CSV.'); return }
           setNewPosts(posts); setNewPostsLoaded(true); setAddError('')
+        } else {
+          const signals = parseICPSignalsCSV(text)
+          setNewIcpSignals(signals); setNewIcpLoaded(true)
         }
       } catch (err) { setAddError((err as Error).message) }
     }
@@ -422,8 +460,9 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
 
   function addMember() {
     if (!newName.trim() || !newPostsLoaded) return
-    onAdd({ id: uid(), name: newName.trim(), role: newRole.trim(), posts: newPosts, icpSignals: [], addedAt: Date.now() })
-    setNewName(''); setNewRole(''); setNewPosts([]); setNewPostsLoaded(false); setShowAddForm(false)
+    onAdd({ id: uid(), name: newName.trim(), role: newRole.trim(), posts: newPosts, icpSignals: newIcpSignals, addedAt: Date.now() })
+    setNewName(''); setNewRole(''); setNewPosts([]); setNewPostsLoaded(false)
+    setNewIcpSignals([]); setNewIcpLoaded(false); setShowAddForm(false)
   }
 
   return (
@@ -553,7 +592,7 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
           <div className="bg-white border border-[#EDE9E4] rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-[#A8A29E]">New Member</p>
-              <button onClick={() => { setShowAddForm(false); setNewName(''); setNewRole(''); setNewPosts([]); setNewPostsLoaded(false) }}
+              <button onClick={() => { setShowAddForm(false); setNewName(''); setNewRole(''); setNewPosts([]); setNewPostsLoaded(false); setNewIcpSignals([]); setNewIcpLoaded(false) }}
                 className="text-[#C7BFB8] hover:text-[#78716C]"><X className="w-4 h-4" /></button>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
@@ -569,27 +608,8 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
-              {[
-                { type: 'posts' as const, label: 'LinkedIn Analytics CSV', hint: 'Required · 90-day export', loaded: newPostsLoaded },
-                { type: 'icp' as const, label: 'ICP Signals CSV', hint: 'Optional · from notus', loaded: false },
-              ].map(({ type, label, hint, loaded }) => {
-                const r = useRef<HTMLInputElement>(null)
-                return (
-                  <div key={type} onClick={() => r.current?.click()}
-                    className="border-2 border-dashed rounded-xl p-5 cursor-pointer transition-all text-center"
-                    style={loaded ? { borderColor: '#16A34A', backgroundColor: '#F0FDF4' } : { borderColor: '#E7E0D8', backgroundColor: '#FAFAF9' }}>
-                    <input ref={r} type="file" accept=".csv" onChange={e => { const f = e.target.files?.[0]; if (f) handleNewFile(f, type); e.target.value = '' }} />
-                    {loaded ? (
-                      <><div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-1.5"><span className="text-green-600 font-bold">✓</span></div>
-                        <p className="text-sm font-medium text-green-700">{label} loaded</p></>
-                    ) : (
-                      <><Upload className="w-5 h-5 text-[#C7BFB8] mx-auto mb-1.5" />
-                        <p className="text-sm font-medium text-[#78716C]">{label}</p>
-                        <p className="text-xs text-[#A8A29E] mt-0.5">{hint}</p></>
-                    )}
-                  </div>
-                )
-              })}
+              <UploadCard type="posts" label="LinkedIn Analytics CSV" hint="Required · 90-day export" loaded={newPostsLoaded} onFile={handleNewFile} />
+              <UploadCard type="icp" label="ICP Signals CSV" hint="Optional · from notus" loaded={newIcpLoaded} onFile={handleNewFile} />
             </div>
             {addError && <p className="text-xs text-red-500 mb-3">{addError}</p>}
             <button onClick={addMember} disabled={!newName.trim() || !newPostsLoaded}
