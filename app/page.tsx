@@ -254,22 +254,24 @@ function toNum(v: string): number {
   return isNaN(n) ? 0 : n
 }
 
+// Keywords that appear in LinkedIn's real column header row (not in data/aggregate rows)
+const LINKEDIN_HEADER_KEYWORDS = ['impression', 'click', 'like', 'comment', 'share', 'follow', 'engagement', 'date', 'publish', 'view', 'content', 'post', 'url', 'reaction']
+
 // Single LinkedIn CSV contains post analytics (and "follows" column = follower growth per post)
 // Handles: UTF-8 BOM, LinkedIn metadata rows before headers, LinkedIn's exact column names
 function parseLinkedInCSV(text: string): { posts: Post[]; detectedColumns: string[] } {
   // Strip UTF-8 BOM
   const clean = text.replace(/^\uFEFF/, '')
 
-  // LinkedIn exports sometimes start with metadata rows (e.g. "LinkedIn analytics", date range)
-  // Scan up to 10 lines for the real header row — identified by containing "impression" or "clicks"
+  // Find the real header row by scoring each line against known LinkedIn column keywords.
+  // The actual header row scores 6-10; aggregate/metadata rows score 0-2.
   const lines = clean.split(/\r?\n/)
   let headerIdx = 0
-  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+  let bestScore = 0
+  for (let i = 0; i < Math.min(lines.length, 15); i++) {
     const lower = lines[i].toLowerCase()
-    if (lower.includes('impression') || (lower.includes('click') && lower.includes('like'))) {
-      headerIdx = i
-      break
-    }
+    const score = LINKEDIN_HEADER_KEYWORDS.filter(k => lower.includes(k)).length
+    if (score > bestScore) { bestScore = score; headerIdx = i }
   }
   const csvText = lines.slice(headerIdx).join('\n')
 
