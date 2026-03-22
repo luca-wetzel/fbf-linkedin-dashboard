@@ -7,6 +7,7 @@ import {
   ReferenceLine, CartesianGrid
 } from 'recharts'
 import Papa from 'papaparse'
+import * as XLSX from 'xlsx'
 import {
   Upload, Plus, Users, ChevronDown,
   FileText, Star, Trash2, BarChart2,
@@ -214,6 +215,26 @@ function smartMergeICP(existing: ICPSignal[], incoming: ICPSignal[]): ICPSignal[
   return [...updated, ...newSignals]
 }
 
+// ─── File Reader ──────────────────────────────────────────────────────────────
+
+// Reads CSV or XLSX and returns text in CSV format for the parsers below
+function fileToCSVText(file: File): Promise<string> {
+  const isXlsx = /\.(xlsx|xls|xlsm)$/i.test(file.name)
+  if (isXlsx) {
+    return file.arrayBuffer().then(buf => {
+      const wb = XLSX.read(buf)
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      return XLSX.utils.sheet_to_csv(ws)
+    })
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = e => resolve(e.target?.result as string)
+    reader.onerror = reject
+    reader.readAsText(file)
+  })
+}
+
 // ─── CSV Parsers ──────────────────────────────────────────────────────────────
 
 type Row = Record<string, string>
@@ -384,8 +405,9 @@ function MiniDropZone({ label, onFile }: {
   const [status, setStatus] = useState<'idle' | 'ok' | 'err'>('idle')
   const [errMsg, setErrMsg] = useState('')
   const handle = useCallback((f: File) => {
-    if (!f.name.endsWith('.csv') && f.type !== 'text/csv') {
-      setErrMsg('Not a CSV file'); setStatus('err'); setTimeout(() => setStatus('idle'), 4000)
+    const ok = /\.(csv|xlsx|xls|xlsm)$/i.test(f.name)
+    if (!ok) {
+      setErrMsg('Upload a CSV or XLSX file'); setStatus('err'); setTimeout(() => setStatus('idle'), 4000)
       return
     }
     onFile(f, (success, msg) => {
@@ -400,7 +422,7 @@ function MiniDropZone({ label, onFile }: {
     : { borderColor: '#EDE9E4', backgroundColor: 'white', color: '#78716C' }
   return (
     <div className="flex flex-col gap-1">
-      <input ref={ref} type="file" accept=".csv" style={{ display: 'none' }}
+      <input ref={ref} type="file" accept=".csv,.xlsx,.xls,.xlsm" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; if (f) handle(f); e.target.value = '' }} />
       <button onClick={() => ref.current?.click()}
         className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all"
@@ -423,7 +445,7 @@ function UploadCard({ type, label, hint, loaded, onFile }: {
     <div onClick={() => ref.current?.click()}
       className="border-2 border-dashed rounded-xl p-5 cursor-pointer transition-all text-center"
       style={loaded ? { borderColor: '#16A34A', backgroundColor: '#F0FDF4' } : { borderColor: '#E7E0D8', backgroundColor: '#FAFAF9' }}>
-      <input ref={ref} type="file" accept=".csv" style={{ display: 'none' }}
+      <input ref={ref} type="file" accept=".csv,.xlsx,.xls,.xlsm" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f, type); e.target.value = '' }} />
       {loaded ? (
         <>
@@ -466,57 +488,43 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
   const [editRole, setEditRole] = useState('')
 
   function handleUpdateFile(memberId: string, file: File, type: 'posts' | 'icp', onResult: (success: boolean, msg?: string) => void) {
-    const reader = new FileReader()
-    reader.onload = e => {
-      const text = e.target?.result as string
-      try {
-        const member = members.find(m => m.id === memberId)
-        if (!member) { onResult(false, 'Member not found'); return }
-        if (type === 'posts') {
-          const { posts: incoming, detectedColumns } = parseLinkedInCSV(text)
-          if (incoming.length === 0) {
-            const hint = detectedColumns.length > 0
-              ? `Columns found: ${detectedColumns.slice(0, 4).join(', ')}... — Make sure this is the LinkedIn Content Analytics CSV`
-              : 'No data found — Make sure this is the LinkedIn Content Analytics CSV (90-day export)'
-            onResult(false, hint)
-            return
-          }
-          const merged = smartMergePosts(member.posts, incoming)
-          onUpdate(memberId, { posts: merged })
-          onResult(true)
-        } else {
-          const incoming = parseICPSignalsCSV(text)
-          const merged = smartMergeICP(member.icpSignals, incoming)
-          onUpdate(memberId, { icpSignals: merged })
-          onResult(true)
+    fileToCSVText(file).then(text => {
+      const member = members.find(m => m.id === memberId)
+      if (!member) { onResult(false, 'Member not found'); return }
+      if (type === 'posts') {
+        const { posts: incoming, detectedColumns } = parseLinkedInCSV(text)
+        if (incoming.length === 0) {
+          const hint = detectedColumns.length > 0
+            ? `Columns found: ${detectedColumns.slice(0, 4).join(', ')}… — Make sure this is the LinkedIn Content Analytics export`
+            : 'No data found — use the LinkedIn Content Analytics 90-day export (CSV or XLSX)'
+          onResult(false, hint); return
         }
-      } catch (err) { onResult(false, (err as Error).message) }
-    }
-    reader.readAsText(file)
+        onUpdate(memberId, { posts: smartMergePosts(member.posts, incoming) })
+        onResult(true)
+      } else {
+        const incoming = parseICPSignalsCSV(text)
+        onUpdate(memberId, { icpSignals: smartMergeICP(member.icpSignals, incoming) })
+        onResult(true)
+      }
+    }).catch(err => onResult(false, (err as Error).message))
   }
 
   function handleNewFile(file: File, type: 'posts' | 'icp') {
-    const reader = new FileReader()
-    reader.onload = e => {
-      const text = e.target?.result as string
-      try {
-        if (type === 'posts') {
-          const { posts, detectedColumns } = parseLinkedInCSV(text)
-          if (posts.length === 0) {
-            const hint = detectedColumns.length > 0
-              ? `Columns found: ${detectedColumns.slice(0, 4).join(', ')}... — Make sure this is the LinkedIn Content Analytics CSV`
-              : 'No valid post data found. Use the LinkedIn Content Analytics 90-day export.'
-            setAddError(hint)
-            return
-          }
-          setNewPosts(posts); setNewPostsLoaded(true); setAddError('')
-        } else {
-          const signals = parseICPSignalsCSV(text)
-          setNewIcpSignals(signals); setNewIcpLoaded(true)
+    fileToCSVText(file).then(text => {
+      if (type === 'posts') {
+        const { posts, detectedColumns } = parseLinkedInCSV(text)
+        if (posts.length === 0) {
+          const hint = detectedColumns.length > 0
+            ? `Columns found: ${detectedColumns.slice(0, 4).join(', ')}… — Make sure this is the LinkedIn Content Analytics export`
+            : 'No valid post data found. Use the LinkedIn Content Analytics 90-day export (CSV or XLSX).'
+          setAddError(hint); return
         }
-      } catch (err) { setAddError((err as Error).message) }
-    }
-    reader.readAsText(file)
+        setNewPosts(posts); setNewPostsLoaded(true); setAddError('')
+      } else {
+        const signals = parseICPSignalsCSV(text)
+        setNewIcpSignals(signals); setNewIcpLoaded(true)
+      }
+    }).catch(err => setAddError((err as Error).message))
   }
 
   function addMember() {
@@ -563,7 +571,7 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
                   <li>Set the date range to <strong className="text-[#44403C]">last 90 days</strong></li>
                   <li>Click <strong className="text-[#44403C]">Export</strong> → download the CSV</li>
                 </ol>
-                <p className="text-xs text-[#A8A29E] mt-2 italic">Always export 90 days. The dashboard merges intelligently — no duplicates.</p>
+                <p className="text-xs text-[#A8A29E] mt-2 italic">Export as CSV or XLSX — both work. Always export 90 days. The dashboard merges intelligently — no duplicates.</p>
               </div>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: BRAND }}>ICP Signals CSV (optional — from notus)</p>
@@ -669,7 +677,7 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <UploadCard type="posts" label="LinkedIn Analytics CSV" hint="Required · 90-day export" loaded={newPostsLoaded} onFile={handleNewFile} />
+              <UploadCard type="posts" label="LinkedIn Analytics" hint="Required · CSV or XLSX · 90-day export" loaded={newPostsLoaded} onFile={handleNewFile} />
               <UploadCard type="icp" label="ICP Signals CSV" hint="Optional · from notus" loaded={newIcpLoaded} onFile={handleNewFile} />
             </div>
             {addError && <p className="text-xs text-red-500 mb-3">{addError}</p>}
