@@ -332,10 +332,18 @@ async function readFileText(file: File): Promise<string> {
 }
 
 async function parseLinkedInFile(file: File): Promise<ParsedLinkedInFile> {
-  const isXlsx = /\.(xlsx|xls|xlsm)$/i.test(file.name)
-  if (isXlsx) {
+  // Always try XLSX first — detect by content, not extension.
+  // LinkedIn XLSX has sheets named DISCOVERY, ENGAGEMENT, TOP POSTS, FOLLOWERS, DEMOGRAPHICS.
+  try {
     const buf = await file.arrayBuffer()
-    return parseLinkedInXLSX(buf)
+    const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
+    const isLinkedInXLSX = wb.SheetNames.some(n => {
+      const l = n.toLowerCase()
+      return l.includes('post') || l.includes('follower') || l.includes('engagement') || l.includes('discovery') || l.includes('demographic')
+    })
+    if (isLinkedInXLSX) return parseLinkedInXLSX(buf)
+  } catch {
+    // Not a valid XLSX — fall through to CSV
   }
   const text = await readFileText(file)
   const { posts, detectedColumns } = parseLinkedInCSV(text)
@@ -604,8 +612,8 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
         if (!member) { onResult(false, 'Member not found'); return }
         if (incoming.length === 0 && incomingFollowers.length === 0) {
           const hint = detectedColumns.length > 0
-            ? `Columns found: ${detectedColumns.slice(0, 4).join(', ')}… — use the LinkedIn Analytics XLSX or CSV export`
-            : 'No data found — use the LinkedIn Analytics 90-day XLSX or CSV export'
+            ? `Parsed as XLSX — Columns: ${detectedColumns.slice(0, 4).join(', ')}… — No posts found. Make sure "TOP POSTS" sheet has data.`
+            : 'No data found — upload the LinkedIn Analytics 90-day XLSX (5 sheets: Discovery, Engagement, Top Posts, Followers, Demographics)'
           onResult(false, hint); return
         }
         onUpdate(memberId, {
@@ -630,8 +638,8 @@ function ManageView({ members, onUpdate, onDelete, onAdd, onDone }: {
       parseLinkedInFile(file).then(({ posts, followerHistory, detectedColumns }) => {
         if (posts.length === 0 && followerHistory.length === 0) {
           const hint = detectedColumns.length > 0
-            ? `Columns found: ${detectedColumns.slice(0, 4).join(', ')}… — use the LinkedIn Analytics XLSX export`
-            : 'No data found. Upload the LinkedIn Analytics 90-day XLSX or CSV export.'
+            ? `Parsed as XLSX — Columns: ${detectedColumns.slice(0, 4).join(', ')}… — No posts found in "TOP POSTS" sheet.`
+            : 'No data found. Upload the LinkedIn Analytics 90-day XLSX (has 5 sheets: Discovery, Engagement, Top Posts, Followers, Demographics).'
           setAddError(hint); return
         }
         setNewPosts(posts)
