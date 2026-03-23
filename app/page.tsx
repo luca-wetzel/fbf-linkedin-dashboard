@@ -7,9 +7,7 @@ import {
   ReferenceLine, CartesianGrid
 } from 'recharts'
 import Papa from 'papaparse'
-// xlsx loaded dynamically (client-side only) to avoid Next.js build-time Node.js issues
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type XLSXModule = any
+import { unzipSync } from 'fflate'
 import {
   Upload, Plus, Users, ChevronDown,
   FileText, Star, Trash2, BarChart2,
@@ -240,84 +238,113 @@ function smartMergeICP(existing: ICPSignal[], incoming: ICPSignal[]): ICPSignal[
 
 type ParsedLinkedInFile = { posts: Post[]; followerHistory: FollowerEntry[]; detectedColumns: string[] }
 
-// Parse LinkedIn XLSX — reads TOP POSTS sheet (per-post data) + FOLLOWERS sheet (daily follower data)
-// XLSX module passed in as parameter (dynamically imported by caller)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseLinkedInXLSX(buf: ArrayBuffer, XLSX: any): ParsedLinkedInFile {
-  const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
+// ── Minimal XLSX reader: fflate (unzip) + DOMParser (XML) ────────────────────
+// XLSX = ZIP archive containing XML files. No external parser needed.
+function xlsxToSheets(buf: ArrayBuffer): { sheetNames: string[]; getSheet: (name: string) => string[][] } {
+  const zip = unzipSync(new Uint8Array(buf))
+  const dec = (b: Uint8Array) => new TextDecoder().decode(b)
+  const parseXML = (key: string) => {
+    const b = zip[key]; return b ? new DOMParser().parseFromString(dec(b), 'text/xml') : null
+  }
 
-  // Find the right sheets by name (case-insensitive)
-  const findSheet = (...keywords: string[]) =>
-    wb.SheetNames.find(n => keywords.some(k => n.toLowerCase().includes(k)))
+  // Shared strings table (cells with t="s" reference this by index)
+  const strs: string[] = []
+  parseXML('xl/sharedStrings.xml')?.querySelectorAll('si').forEach(si =>
+    strs.push(Array.from(si.querySelectorAll('t')).map(t => t.textContent ?? '').join('')))
 
-  const topPostsName = findSheet('top post', 'top_post', 'posts')
-  const followersName = findSheet('follower')
+  // Sheet name → file path
+  const paths: Record<string, string> = {}
+  const wbDoc = parseXML('xl/workbook.xml')
+  const relsDoc = parseXML('xl/_rels/workbook.xml.rels')
+  if (wbDoc && relsDoc) {
+    const rMap: Record<string, string> = {}
+    relsDoc.querySelectorAll('Relationship').forEach(r => {
+      rMap[r.getAttribute('Id') ?? ''] = `xl/${(r.getAttribute('Target') ?? '').replace(/^\.\.\//, '')}`
+    })
+    wbDoc.querySelectorAll('sheet').forEach(s => {
+      const name = s.getAttribute('name') ?? ''
+      const rId = s.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id')
+             ?? s.getAttribute('r:id') ?? ''
+      if (name && rMap[rId]) paths[name] = rMap[rId]
+    })
+  }
 
-  // ── TOP POSTS sheet: two side-by-side tables ──────────────────────────────
-  // Left table:  col 0 = Post URL, col 1 = Post publish date, col 2 = Engagements
-  // Right table: col 4 = Post URL, col 5 = Post publish date, col 6 = Impressions
+  const colIdx = (col: string) => col.split('').reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1
+  // Excel date serial → "M/D/YYYY" (serials 40000-60000 = years 2009-2064)
+  const excelDate = (n: number) => {
+    const d = new Date(Date.UTC(1899, 11, 30) + n * 86400000)
+    return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`
+  }
+
+  const getSheet = (target: string): string[][] => {
+    const name = Object.keys(paths).find(n => n.toLowerCase() === target.toLowerCase())
+    if (!name || !zip[paths[name]]) return []
+    const doc = new DOMParser().parseFromString(dec(zip[paths[name]]), 'text/xml')
+    const rows: string[][] = []
+    doc.querySelectorAll('row').forEach(row => {
+      const ri = parseInt(row.getAttribute('r') ?? '1') - 1
+      while (rows.length <= ri) rows.push([])
+      row.querySelectorAll('c').forEach(c => {
+        const ref = c.getAttribute('r') ?? ''
+        const ci = colIdx(ref.match(/^([A-Z]+)/)?.[1] ?? 'A')
+        while (rows[ri].length <= ci) rows[ri].push('')
+        const t = c.getAttribute('t')
+        const v = c.querySelector('v')?.textContent?.trim() ?? ''
+        if (t === 's') rows[ri][ci] = strs[+v] ?? ''
+        else if (t === 'inlineStr') rows[ri][ci] = c.querySelector('is t')?.textContent ?? ''
+        else { const num = parseFloat(v); rows[ri][ci] = (!t && num > 40000 && num < 60000) ? excelDate(num) : v }
+      })
+    })
+    return rows
+  }
+
+  return { sheetNames: Object.keys(paths), getSheet }
+}
+
+// Parse LinkedIn XLSX — reads TOP POSTS + FOLLOWERS sheets
+function parseLinkedInXLSX(buf: ArrayBuffer): ParsedLinkedInFile {
+  const { sheetNames, getSheet } = xlsxToSheets(buf)
+  const find = (...kw: string[]) => sheetNames.find(n => kw.some(k => n.toLowerCase().includes(k)))
+
+  const topPostsName = find('top post', 'top_post', 'posts')
+  const followersName = find('follower')
   const posts: Post[] = []
   const detectedColumns: string[] = []
 
+  // ── TOP POSTS: two side-by-side tables ──
+  // Left:  col0=Post URL, col1=Post publish date, col2=Engagements
+  // Right: col4=Post URL, col5=Post publish date, col6=Impressions
   if (topPostsName) {
-    const ws = wb.Sheets[topPostsName]
-    const raw = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, raw: false, defval: '' }) as string[][]
-
-    // Find header row (contains "Post URL")
-    let headerIdx = raw.findIndex(row => row.join(' ').toLowerCase().includes('post url'))
-    if (headerIdx < 0) headerIdx = 0
+    const raw = getSheet(topPostsName)
+    const headerIdx = Math.max(0, raw.findIndex(row => row.join(' ').toLowerCase().includes('post url')))
     detectedColumns.push(...(raw[headerIdx] ?? []).filter(Boolean))
-
     const postMap = new Map<string, Partial<Post>>()
     for (let i = headerIdx + 1; i < raw.length; i++) {
       const row = raw[i]
-      // Left table (by Engagements)
-      const urlL = (row[0] ?? '').toString().trim()
-      const dateL = (row[1] ?? '').toString().trim()
-      const engL = parseFloat((row[2] ?? '0').toString().replace(/[^0-9.]/g, '')) || 0
-      if (urlL && dateL) {
-        const ex = postMap.get(urlL) ?? {}
-        postMap.set(urlL, { ...ex, url: urlL, date: dateL, engagements: engL })
-      }
-      // Right table (by Impressions) — col 4-6
-      const urlR = (row[4] ?? '').toString().trim()
-      const dateR = (row[5] ?? '').toString().trim()
-      const impR = parseFloat((row[6] ?? '0').toString().replace(/[^0-9.]/g, '')) || 0
-      if (urlR && dateR) {
-        const ex = postMap.get(urlR) ?? {}
-        postMap.set(urlR, { ...ex, url: urlR, date: dateR, impressions: impR })
-      }
+      const n = (v: string) => parseFloat((v ?? '').replace(/[^0-9.]/g, '')) || 0
+      const urlL = (row[0] ?? '').trim(), dateL = (row[1] ?? '').trim()
+      if (urlL && dateL) postMap.set(urlL, { ...postMap.get(urlL), url: urlL, date: dateL, engagements: n(row[2]) })
+      const urlR = (row[4] ?? '').trim(), dateR = (row[5] ?? '').trim()
+      if (urlR && dateR) postMap.set(urlR, { ...postMap.get(urlR), url: urlR, date: dateR, impressions: n(row[6]) })
     }
-
     for (const p of postMap.values()) {
       if (!p.date) continue
-      const impressions = p.impressions ?? 0
-      const engagements = p.engagements ?? 0
-      posts.push({
-        date: p.date, url: p.url,
-        impressions, engagements,
-        engagementRate: impressions > 0 ? (engagements / impressions) * 100 : 0,
-        clicks: 0, likes: 0, comments: 0, shares: 0, follows: 0,
-      })
+      const imp = p.impressions ?? 0, eng = p.engagements ?? 0
+      posts.push({ date: p.date, url: p.url, impressions: imp, engagements: eng,
+        engagementRate: imp > 0 ? (eng / imp) * 100 : 0, clicks: 0, likes: 0, comments: 0, shares: 0, follows: 0 })
     }
   }
 
-  // ── FOLLOWERS sheet: Total followers header, then Date | New followers ─────
+  // ── FOLLOWERS: Date | New followers ──
   const followerHistory: FollowerEntry[] = []
   if (followersName) {
-    const ws = wb.Sheets[followersName]
-    const raw = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, raw: false, defval: '' }) as string[][]
-    // Find header row (contains "Date" and "follower")
-    let headerIdx = raw.findIndex(row => {
-      const s = row.join(' ').toLowerCase()
-      return s.includes('date') && s.includes('follower')
-    })
-    if (headerIdx >= 0) {
-      for (let i = headerIdx + 1; i < raw.length; i++) {
-        const row = raw[i]
-        const date = (row[0] ?? '').toString().trim()
-        const newFollowers = parseFloat((row[1] ?? '0').toString().replace(/[^0-9.]/g, '')) || 0
-        if (date && parseFlexDate(date)) followerHistory.push({ date, newFollowers })
+    const raw = getSheet(followersName)
+    const hi = raw.findIndex(row => { const s = row.join(' ').toLowerCase(); return s.includes('date') && s.includes('follower') })
+    if (hi >= 0) {
+      for (let i = hi + 1; i < raw.length; i++) {
+        const date = (raw[i][0] ?? '').trim()
+        const nf = parseFloat((raw[i][1] ?? '').replace(/[^0-9.]/g, '')) || 0
+        if (date && parseFlexDate(date)) followerHistory.push({ date, newFollowers: nf })
       }
     }
   }
@@ -325,7 +352,7 @@ function parseLinkedInXLSX(buf: ArrayBuffer, XLSX: any): ParsedLinkedInFile {
   return { posts: posts.filter(p => p.impressions > 0 || p.engagements > 0), followerHistory, detectedColumns }
 }
 
-// Parse LinkedIn CSV (fallback for CSV exports)
+// Read file as text (for CSV)
 async function readFileText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -336,20 +363,16 @@ async function readFileText(file: File): Promise<string> {
 }
 
 async function parseLinkedInFile(file: File): Promise<ParsedLinkedInFile> {
-  // Always try XLSX first — detect by content, not by extension.
-  // Dynamic import keeps xlsx out of the Next.js server-side build.
+  // Try XLSX first (detect by content, not extension)
   try {
     const buf = await file.arrayBuffer()
-    const XLSX: XLSXModule = await import('xlsx')
-    const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
-    const isLinkedInXLSX = wb.SheetNames.some((n: string) => {
+    const { sheetNames } = xlsxToSheets(buf)
+    const isLinkedIn = sheetNames.some(n => {
       const l = n.toLowerCase()
-      return l.includes('post') || l.includes('follower') || l.includes('engagement') || l.includes('discovery') || l.includes('demographic')
+      return l.includes('post') || l.includes('follower') || l.includes('engagement') || l.includes('discovery')
     })
-    if (isLinkedInXLSX) return parseLinkedInXLSX(buf, XLSX)
-  } catch {
-    // Not valid XLSX — fall through to CSV
-  }
+    if (isLinkedIn) return parseLinkedInXLSX(buf)
+  } catch { /* not a valid XLSX — fall through */ }
   const text = await readFileText(file)
   const { posts, detectedColumns } = parseLinkedInCSV(text)
   return { posts, followerHistory: [], detectedColumns }
