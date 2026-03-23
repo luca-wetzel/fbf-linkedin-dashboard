@@ -7,7 +7,9 @@ import {
   ReferenceLine, CartesianGrid
 } from 'recharts'
 import Papa from 'papaparse'
-import * as XLSX from 'xlsx'
+// xlsx loaded dynamically (client-side only) to avoid Next.js build-time Node.js issues
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type XLSXModule = any
 import {
   Upload, Plus, Users, ChevronDown,
   FileText, Star, Trash2, BarChart2,
@@ -239,8 +241,10 @@ function smartMergeICP(existing: ICPSignal[], incoming: ICPSignal[]): ICPSignal[
 type ParsedLinkedInFile = { posts: Post[]; followerHistory: FollowerEntry[]; detectedColumns: string[] }
 
 // Parse LinkedIn XLSX — reads TOP POSTS sheet (per-post data) + FOLLOWERS sheet (daily follower data)
-function parseLinkedInXLSX(buf: ArrayBuffer): ParsedLinkedInFile {
-  const wb = XLSX.read(buf)
+// XLSX module passed in as parameter (dynamically imported by caller)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseLinkedInXLSX(buf: ArrayBuffer, XLSX: any): ParsedLinkedInFile {
+  const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
 
   // Find the right sheets by name (case-insensitive)
   const findSheet = (...keywords: string[]) =>
@@ -332,18 +336,19 @@ async function readFileText(file: File): Promise<string> {
 }
 
 async function parseLinkedInFile(file: File): Promise<ParsedLinkedInFile> {
-  // Always try XLSX first — detect by content, not extension.
-  // LinkedIn XLSX has sheets named DISCOVERY, ENGAGEMENT, TOP POSTS, FOLLOWERS, DEMOGRAPHICS.
+  // Always try XLSX first — detect by content, not by extension.
+  // Dynamic import keeps xlsx out of the Next.js server-side build.
   try {
     const buf = await file.arrayBuffer()
+    const XLSX: XLSXModule = await import('xlsx')
     const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
-    const isLinkedInXLSX = wb.SheetNames.some(n => {
+    const isLinkedInXLSX = wb.SheetNames.some((n: string) => {
       const l = n.toLowerCase()
       return l.includes('post') || l.includes('follower') || l.includes('engagement') || l.includes('discovery') || l.includes('demographic')
     })
-    if (isLinkedInXLSX) return parseLinkedInXLSX(buf)
+    if (isLinkedInXLSX) return parseLinkedInXLSX(buf, XLSX)
   } catch {
-    // Not a valid XLSX — fall through to CSV
+    // Not valid XLSX — fall through to CSV
   }
   const text = await readFileText(file)
   const { posts, detectedColumns } = parseLinkedInCSV(text)
