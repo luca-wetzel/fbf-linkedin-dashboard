@@ -1190,7 +1190,7 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
           <span className="text-[10px] text-[#D4D4D4]"><span className="text-amber-500">●</span> Top 50% = {fmtN(BENCHMARKS.medianPerPost)}/post</span>
         </div>
       </div>
-      {!isAllTime && <ICPOverview members={members} orgIcpSignals={orgIcpSignals ?? []} />}
+      <ICPOverview members={members} orgIcpSignals={orgIcpSignals ?? []} />
     </div>
   )
 }
