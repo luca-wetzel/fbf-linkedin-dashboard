@@ -1428,6 +1428,7 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
   const [activeTab, setActiveTab] = useState<string>('leaderboard')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [saveError, setSaveError] = useState('')
   const [orgIcpSignals, setOrgIcpSignals] = useState<ICPSignal[]>([])
 
   useEffect(() => {
@@ -1456,38 +1457,50 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
   useEffect(() => { if (allMonthsAcross.length > 0) setSelectedMonth(allMonthsAcross[0]) }, [allMonthsAcross])
 
   function handleUpdate(id: string, patch: Partial<Pick<Member, 'name' | 'role' | 'posts' | 'icpSignals' | 'followerHistory'>>) {
-    setMembers(prev => prev.map(m => m.id === id ? { ...m, ...patch } : m))
+    const prev = members
+    setMembers(ms => ms.map(m => m.id === id ? { ...m, ...patch } : m))
+    setSaveError('')
     authFetch(`/api/org/${slug}/members/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
-    }).catch(console.error)
+    }).then(r => { if (!r.ok) throw new Error(`Save failed (${r.status})`) })
+      .catch(e => { setMembers(prev); setSaveError(e.message || 'Failed to save changes') })
   }
 
   function handleDelete(id: string) {
-    setMembers(prev => {
-      const updated = prev.filter(m => m.id !== id)
+    const prev = members
+    const prevTab = activeTab
+    setMembers(ms => {
+      const updated = ms.filter(m => m.id !== id)
       if (updated.length === 0) setView('manage')
       else if (activeTab === id) setActiveTab('leaderboard')
       return updated
     })
-    authFetch(`/api/org/${slug}/members/${id}`, { method: 'DELETE' }).catch(console.error)
+    setSaveError('')
+    authFetch(`/api/org/${slug}/members/${id}`, { method: 'DELETE' })
+      .then(r => { if (!r.ok) throw new Error(`Delete failed (${r.status})`) })
+      .catch(e => { setMembers(prev); setActiveTab(prevTab); setSaveError(e.message || 'Failed to delete member') })
   }
 
   async function handleOrgIcpUpload(signals: ICPSignal[]) {
+    const prev = orgIcpSignals
     setOrgIcpSignals(signals)
     const res = await authFetch(`/api/org/${slug}/org-icp`, {
       method: 'POST',
       body: JSON.stringify({ signals }),
     })
     if (!res.ok) {
+      setOrgIcpSignals(prev)
       const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       throw new Error(body.error || `Save failed (${res.status})`)
     }
   }
 
   async function handleOrgIcpClear() {
+    const prev = orgIcpSignals
     setOrgIcpSignals([])
-    await authFetch(`/api/org/${slug}/org-icp`, { method: 'DELETE' })
+    const res = await authFetch(`/api/org/${slug}/org-icp`, { method: 'DELETE' })
+    if (!res.ok) { setOrgIcpSignals(prev); setSaveError('Failed to clear ICP signals') }
   }
 
   async function handleAdd(data: NewMemberData) {
@@ -1603,16 +1616,25 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
             : activeMember
             ? <MemberView member={activeMember} goals={goals[activeMember.id] ?? DEFAULT_GOALS}
                 onGoalsChange={g => {
+                  const prevGoals = goals
                   const newGoals = { ...goals, [activeMember.id]: g }
                   setGoals(newGoals)
                   authFetch(`/api/org/${slug}/goals`, {
                     method: 'PUT',
                     body: JSON.stringify(newGoals),
-                  }).catch(console.error)
+                  }).then(r => { if (!r.ok) throw new Error('Save failed') })
+                    .catch(() => { setGoals(prevGoals); setSaveError('Failed to save goals') })
                 }} />
             : null}
         </div>
       </main>
+
+      {saveError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-600 text-white text-sm px-5 py-3 rounded-xl shadow-lg flex items-center gap-3 z-50">
+          <span>{saveError}</span>
+          <button onClick={() => setSaveError('')} className="text-white/70 hover:text-white font-bold">✕</button>
+        </div>
+      )}
     </div>
   )
 }

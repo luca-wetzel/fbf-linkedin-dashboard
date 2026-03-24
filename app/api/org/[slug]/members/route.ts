@@ -18,30 +18,40 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
 
   if (error || !member) return NextResponse.json({ error: error?.message }, { status: 500 })
 
-  await getServiceSupabase().from('li_goals').insert({
-    member_id: member.id,
-    monthly_posts: 8,
-    monthly_impressions: 10000,
-    monthly_followers: 100,
-    monthly_icp_signals: 20,
-  })
+  try {
+    const { error: goalsErr } = await getServiceSupabase().from('li_goals').insert({
+      member_id: member.id,
+      monthly_posts: 8,
+      monthly_impressions: 10000,
+      monthly_followers: 100,
+      monthly_icp_signals: 20,
+    })
+    if (goalsErr) throw goalsErr
 
-  if (posts.length > 0) {
-    await getServiceSupabase().from('li_posts').insert(
-      posts.map((p: Record<string, unknown>) => ({ member_id: member.id, ...flatPost(p) }))
-    )
-  }
-  if (followerHistory.length > 0) {
-    await getServiceSupabase().from('li_follower_history').insert(
-      followerHistory.map((f: { date: string; newFollowers: number }) => ({
-        member_id: member.id, date: f.date, new_followers: f.newFollowers,
-      }))
-    )
-  }
-  if (icpSignals.length > 0) {
-    await getServiceSupabase().from('li_icp_signals').insert(
-      icpSignals.map((s: Record<string, unknown>) => ({ member_id: member.id, ...flatSignal(s) }))
-    )
+    if (posts.length > 0) {
+      const { error: postsErr } = await getServiceSupabase().from('li_posts').insert(
+        posts.map((p: Record<string, unknown>) => ({ member_id: member.id, ...flatPost(p) }))
+      )
+      if (postsErr) throw postsErr
+    }
+    if (followerHistory.length > 0) {
+      const { error: fhErr } = await getServiceSupabase().from('li_follower_history').insert(
+        followerHistory.map((f: { date: string; newFollowers: number }) => ({
+          member_id: member.id, date: f.date, new_followers: f.newFollowers,
+        }))
+      )
+      if (fhErr) throw fhErr
+    }
+    if (icpSignals.length > 0) {
+      const { error: icpErr } = await getServiceSupabase().from('li_icp_signals').insert(
+        icpSignals.map((s: Record<string, unknown>) => ({ member_id: member.id, ...flatSignal(s) }))
+      )
+      if (icpErr) throw icpErr
+    }
+  } catch (insertErr) {
+    // Cleanup: delete the partially created member (cascades to goals/posts/etc)
+    await getServiceSupabase().from('li_members').delete().eq('id', member.id)
+    return NextResponse.json({ error: `Failed to create member data: ${(insertErr as Error).message}` }, { status: 500 })
   }
 
   return NextResponse.json({ id: member.id, addedAt: member.added_at })
