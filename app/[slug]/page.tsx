@@ -878,7 +878,7 @@ function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSign
   const trendData = useMemo(() => {
     const byMonth: Record<string, number> = {}
     combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); byMonth[mk] = (byMonth[mk] || 0) + 1 })
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-9).map(([date, total]) => ({ date, total }))
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([date, total]) => ({ date, total }))
   }, [combined])
 
   const topCompany = companyCounts[0]?.[0] ?? null
@@ -945,7 +945,7 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
   const trendData = useMemo(() => {
     const byMonth: Record<string, number> = {}
     combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); byMonth[mk] = (byMonth[mk] || 0) + 1 })
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([date, total]) => ({ date, total }))
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([date, total]) => ({ date, total }))
   }, [combined])
 
   const actionBreakdown = useMemo(() => {
@@ -1122,7 +1122,7 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
       const mk = monthKey(d)
       byMonth[mk] = (byMonth[mk] || 0) + p.impressions
     }))
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([date, impressions]) => ({ date, impressions }))
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([date, impressions]) => ({ date, impressions }))
   }, [members])
 
   return (
@@ -1267,7 +1267,7 @@ function MemberView({ member, goals, onGoalsChange }: {
     } else {
       member.posts.forEach(p => { const d = parseFlexDate(p.date); if (d) { const mk = monthKey(d); byMonth[mk] = (byMonth[mk] || 0) + p.follows } })
     }
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-9).map(([date, newFollowers]) => ({ date, newFollowers }))
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([date, newFollowers]) => ({ date, newFollowers }))
   }, [member.posts, member.followerHistory])
 
   const chartData = useMemo(() => {
