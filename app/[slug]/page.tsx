@@ -726,9 +726,10 @@ function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone, orgIc
           <MiniDropZone
             label={orgIcpSignals.length > 0 ? 'Replace Org ICP Signals' : 'Upload Org ICP Signals'}
             onFile={(f, cb) => {
-              parseICPFile(f).then(signals =>
+              parseICPFile(f).then(signals => {
+                if (signals.length === 0) { cb(false, 'No signals found — check the file has a Date column'); return }
                 onOrgIcpUpload(signals).then(() => cb(true)).catch(err => cb(false, (err as Error).message))
-              ).catch(err => cb(false, (err as Error).message))
+              }).catch(err => cb(false, (err as Error).message))
             }}
           />
         </div>
@@ -1511,11 +1512,15 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
 
   async function handleOrgIcpUpload(signals: ICPSignal[]) {
     setOrgIcpSignals(signals)
-    await fetch(`/api/org/${slug}/org-icp`, {
+    const res = await fetch(`/api/org/${slug}/org-icp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ signals }),
     })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      throw new Error(body.error || `Save failed (${res.status})`)
+    }
   }
 
   async function handleOrgIcpClear() {

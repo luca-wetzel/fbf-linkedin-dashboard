@@ -16,7 +16,8 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
 
   const { signals } = await req.json()
 
-  await getSupabase().from('li_org_icp_signals').delete().eq('org_id', org.id)
+  const { error: delErr } = await getSupabase().from('li_org_icp_signals').delete().eq('org_id', org.id)
+  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
 
   if (signals && signals.length > 0) {
     const rows = signals.map((s: {
@@ -32,10 +33,11 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       source: s.source ?? null,
       is_icp: s.isIcp ?? false,
     }))
-    await getSupabase().from('li_org_icp_signals').insert(rows)
+    const { error: insErr } = await getSupabase().from('li_org_icp_signals').insert(rows)
+    if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, count: signals?.length ?? 0 })
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { slug: string } }) {
