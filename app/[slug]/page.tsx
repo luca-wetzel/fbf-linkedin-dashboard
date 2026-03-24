@@ -1083,15 +1083,20 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
 // ─── Leaderboard ──────────────────────────────────────────────────────────────
 
 function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: Member[]; selectedMonth: string; orgIcpSignals?: ICPSignal[] }) {
-  const orgIcpMonth = useMemo(() => orgIcpSignals ? icpForMonth(orgIcpSignals, selectedMonth) : [], [orgIcpSignals, selectedMonth])
+  const isAllTime = selectedMonth === 'all'
+  const orgIcpFiltered = useMemo(() => {
+    if (!orgIcpSignals) return []
+    return isAllTime ? orgIcpSignals : icpForMonth(orgIcpSignals, selectedMonth)
+  }, [orgIcpSignals, selectedMonth, isAllTime])
 
   const rows = useMemo(() => {
     return members.map(m => {
-      const mp = postsForMonth(m.posts, selectedMonth)
-      const mf = followerGrowthForMonth(m.posts, m.followerHistory, selectedMonth)
-      const memberIcp = icpForMonth(m.icpSignals, selectedMonth)
-      // Also count org ICP signals attributed to this member
-      const attributedOrg = orgIcpMonth.filter(s => attributeOrgSignal(s, [m]) === m.name)
+      const mp = isAllTime ? m.posts : postsForMonth(m.posts, selectedMonth)
+      const mf = isAllTime
+        ? m.followerHistory.reduce((s, f) => s + f.newFollowers, 0)
+        : followerGrowthForMonth(m.posts, m.followerHistory, selectedMonth)
+      const memberIcp = isAllTime ? m.icpSignals : icpForMonth(m.icpSignals, selectedMonth)
+      const attributedOrg = orgIcpFiltered.filter(s => attributeOrgSignal(s, [m]) === m.name)
       const icpTotal = memberIcp.length + attributedOrg.length
       const impressions = mp.reduce((s, p) => s + p.impressions, 0)
       const avgPerPost = mp.length > 0 ? impressions / mp.length : 0
@@ -1099,27 +1104,28 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
       const t = tier(avgPerPost)
       return { member: m, postCount: mp.length, impressions, avgPerPost, avgEng, followers: mf, tier: t, icpTotal }
     }).sort((a, b) => b.impressions - a.impressions)
-  }, [members, selectedMonth, orgIcpMonth])
+  }, [members, selectedMonth, orgIcpFiltered, isAllTime])
 
   const totalImpressions = rows.reduce((s, r) => s + r.impressions, 0)
   const totalPosts = rows.reduce((s, r) => s + r.postCount, 0)
   const totalFollowers = rows.reduce((s, r) => s + r.followers, 0)
-  const unattributedIcp = orgIcpMonth.filter(s => !attributeOrgSignal(s, members)).length
+  const unattributedIcp = orgIcpFiltered.filter(s => !attributeOrgSignal(s, members)).length
   const totalIcp = rows.reduce((s, r) => s + r.icpTotal, 0) + unattributedIcp
   const maxImpressions = Math.max(...rows.map(r => r.impressions), 1)
-  const hasIcp = rows.some(r => r.icpTotal > 0) || orgIcpMonth.length > 0
+  const hasIcp = rows.some(r => r.icpTotal > 0) || orgIcpFiltered.length > 0
+  const periodLabel = isAllTime ? 'All Time' : monthLabel(selectedMonth)
 
   return (
     <div className="space-y-5">
       <div className={`grid grid-cols-2 gap-4 ${hasIcp ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
-        <StatCard label="Team Impressions" value={fmtN(totalImpressions)} sub={`${members.length} members · ${monthLabel(selectedMonth)}`} />
+        <StatCard label="Team Impressions" value={fmtN(totalImpressions)} sub={`${members.length} members · ${periodLabel}`} />
         <StatCard label="Posts Published" value={totalPosts.toString()} sub={`${fmtN(totalImpressions / Math.max(totalPosts, 1))} avg impressions / post`} />
-        <StatCard label="Follower Growth" value={`+${fmtN(totalFollowers)}`} sub={monthLabel(selectedMonth)} />
-        {hasIcp && <StatCard label="ICP Signals" value={fmtN(totalIcp)} sub={unattributedIcp > 0 ? `incl. ${unattributedIcp} unattributed` : 'Total LinkedIn signals this month'} />}
+        <StatCard label="Follower Growth" value={`+${fmtN(totalFollowers)}`} sub={periodLabel} />
+        {hasIcp && <StatCard label="ICP Signals" value={fmtN(totalIcp)} sub={unattributedIcp > 0 ? `incl. ${unattributedIcp} unattributed` : `Total signals · ${periodLabel}`} />}
       </div>
       <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-[#EEF1F5]">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">Leaderboard — {monthLabel(selectedMonth)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">Leaderboard — {periodLabel}</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1184,7 +1190,7 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
           <span className="text-[10px] text-[#D4D4D4]"><span className="text-amber-500">●</span> Top 50% = {fmtN(BENCHMARKS.medianPerPost)}/post</span>
         </div>
       </div>
-      <ICPOverview members={members} orgIcpSignals={orgIcpSignals ?? []} />
+      {!isAllTime && <ICPOverview members={members} orgIcpSignals={orgIcpSignals ?? []} />}
     </div>
   )
 }
@@ -1494,8 +1500,7 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
     return Array.from(keys).sort().reverse()
   }, [members])
 
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => monthKey(new Date()))
-  useEffect(() => { if (allMonthsAcross.length > 0) setSelectedMonth(allMonthsAcross[0]) }, [allMonthsAcross])
+  const [selectedMonth, setSelectedMonth] = useState<string>('all')
 
   function handleUpdate(id: string, patch: Partial<Pick<Member, 'name' | 'role' | 'posts' | 'icpSignals' | 'followerHistory'>>) {
     const prev = members
@@ -1598,11 +1603,11 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
           <button onClick={() => setSidebarOpen(true)} className="p-1 -ml-1"><Menu className="w-5 h-5 text-[#4A4A4A]" /></button>
           <p className="text-sm font-semibold text-[#2D2D2D] truncate">{orgName}</p>
         </div>
-        {activeTab === 'leaderboard' && allMonthsAcross.length > 1 && (
+        {activeTab === 'leaderboard' && allMonthsAcross.length > 0 && (
           <div className="relative">
             <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
               className="bg-white border border-[#E8ECF0] text-[#2D2D2D] text-xs rounded-lg pl-2 pr-6 py-1.5 outline-none cursor-pointer appearance-none">
-              {allMonthsAcross.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+              {<option value="all">All Time</option>}{allMonthsAcross.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
             <ChevronDown className="w-3 h-3 text-[#D4D4D4] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
@@ -1654,11 +1659,11 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
           {activeTab === 'leaderboard' ? (
             <div className="flex items-center justify-between mb-4 md:mb-6">
               <div><h1 className="text-xl md:text-2xl font-semibold text-[#2D2D2D]">Team</h1><p className="text-sm text-[#6B6B6B] mt-0.5">LinkedIn performance overview</p></div>
-              {allMonthsAcross.length > 1 && (
+              {allMonthsAcross.length > 0 && (
                 <div className="relative hidden md:block">
                   <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
                     className="bg-white border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg pl-3 pr-8 py-2 outline-none cursor-pointer appearance-none">
-                    {allMonthsAcross.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+                    {<option value="all">All Time</option>}{allMonthsAcross.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
                   </select>
                   <ChevronDown className="w-3 h-3 text-[#D4D4D4] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
