@@ -878,7 +878,7 @@ function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSign
   const trendData = useMemo(() => {
     const byMonth: Record<string, number> = {}
     combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); byMonth[mk] = (byMonth[mk] || 0) + 1 })
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([date, total]) => ({ date, total }))
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).filter(([, v]) => v > 0).slice(-12).map(([date, total]) => ({ date, total }))
   }, [combined])
 
   const topCompany = companyCounts[0]?.[0] ?? null
@@ -896,7 +896,7 @@ function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSign
           <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">ICP Signal Trend</p>
           <ResponsiveContainer width="100%" height={140}>
             <LineChart data={trendData}>
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] }} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [y, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] + ' \'' + y.slice(2) }} />
               <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} width={28} />
               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
               <CartesianGrid vertical={false} stroke="#EEF1F5" />
@@ -945,7 +945,7 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
   const trendData = useMemo(() => {
     const byMonth: Record<string, number> = {}
     combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); byMonth[mk] = (byMonth[mk] || 0) + 1 })
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([date, total]) => ({ date, total }))
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).filter(([, v]) => v > 0).slice(-12).map(([date, total]) => ({ date, total }))
   }, [combined])
 
   const actionBreakdown = useMemo(() => {
@@ -986,7 +986,7 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
           <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Monthly Trend</p>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={trendData}>
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] }} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [y, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] + ' \'' + y.slice(2) }} />
               <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} width={28} />
               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
               <CartesianGrid vertical={false} stroke="#EEF1F5" />
@@ -1122,7 +1122,7 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
       const mk = monthKey(d)
       byMonth[mk] = (byMonth[mk] || 0) + p.impressions
     }))
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([date, impressions]) => ({ date, impressions }))
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).filter(([, v]) => v > 0).slice(-12).map(([date, impressions]) => ({ date, impressions }))
   }, [members])
 
   return (
@@ -1139,7 +1139,7 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
           <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Impressions Trend</p>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={impressionsTrend}>
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] }} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [y, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] + ' \'' + y.slice(2) }} />
               <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={fmtN} width={36} />
               <Tooltip formatter={(v: number) => [fmtN(v), 'Impressions']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
               <CartesianGrid vertical={false} stroke="#EEF1F5" />
@@ -1267,7 +1267,7 @@ function MemberView({ member, goals, onGoalsChange }: {
     } else {
       member.posts.forEach(p => { const d = parseFlexDate(p.date); if (d) { const mk = monthKey(d); byMonth[mk] = (byMonth[mk] || 0) + p.follows } })
     }
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([date, newFollowers]) => ({ date, newFollowers }))
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).filter(([, v]) => v > 0).slice(-12).map(([date, newFollowers]) => ({ date, newFollowers }))
   }, [member.posts, member.followerHistory])
 
   const chartData = useMemo(() => {
@@ -1381,7 +1381,7 @@ function MemberView({ member, goals, onGoalsChange }: {
           <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Follower Growth — Monthly</p>
           <ResponsiveContainer width="100%" height={140}>
             <LineChart data={followerChartData}>
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] }} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [y, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] + ' \'' + y.slice(2) }} />
               <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={fmtN} width={36} />
               <Tooltip formatter={(v: number) => [`+${fmtN(v)}`, 'New Followers']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
               <CartesianGrid vertical={false} stroke="#EEF1F5" />
