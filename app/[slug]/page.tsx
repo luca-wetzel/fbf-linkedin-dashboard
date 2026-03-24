@@ -791,51 +791,36 @@ function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone, orgIc
 // ─── ICP Signal Table (member view) ───────────────────────────────────────────
 
 function ICPSignalTable({ signals, monthLabel: label }: { signals: ICPSignal[]; monthLabel: string }) {
-  const [showIcpOnly, setShowIcpOnly] = useState(false)
   const sorted = useMemo(() =>
     [...signals].sort((a, b) => (parseFlexDate(b.date)?.getTime() ?? 0) - (parseFlexDate(a.date)?.getTime() ?? 0))
   , [signals])
-  const filtered = showIcpOnly ? sorted.filter(s => s.isIcp) : sorted
-  const icpCount = signals.filter(s => s.isIcp).length
   const actionCounts: Record<string, number> = {}
   signals.forEach(s => { actionCounts[s.action] = (actionCounts[s.action] || 0) + 1 })
   const actionBreakdown = Object.entries(actionCounts).sort((a, b) => b[1] - a[1])
 
   return (
     <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#EEF1F5] flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">ICP Signals — {label}</p>
-          {icpCount > 0 && <p className="text-xs text-amber-600 mt-0.5">{icpCount} confirmed ICP match{icpCount > 1 ? 'es' : ''}</p>}
-        </div>
-        <div className="flex rounded-lg border border-[#E8ECF0] overflow-hidden text-xs">
-          <button onClick={() => setShowIcpOnly(false)} className="px-3 py-1.5 font-medium transition-colors" style={!showIcpOnly ? { backgroundColor: BRAND, color: 'white' } : { color: '#4A4A4A' }}>All</button>
-          <button onClick={() => setShowIcpOnly(true)} className="px-3 py-1.5 font-medium transition-colors border-l border-[#E8ECF0]" style={showIcpOnly ? { backgroundColor: BRAND, color: 'white' } : { color: '#4A4A4A' }}>ICP Only</button>
-        </div>
+      <div className="px-5 py-4 border-b border-[#EEF1F5]">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">ICP Signals — {label}</p>
       </div>
-      {filtered.length === 0 ? (
-        <p className="px-5 py-6 text-xs text-center text-[#6B6B6B]">No confirmed ICP signals this month.</p>
+      {sorted.length === 0 ? (
+        <p className="px-5 py-6 text-xs text-center text-[#6B6B6B]">No ICP signals this month.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead><tr className="border-b border-[#FEFDFB]">
-              {['Date', 'Name', 'Company', 'Title', 'Action', 'ICP'].map(h => (
+              {['Date', 'Name', 'Company', 'Title', 'Action'].map(h => (
                 <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">{h}</th>
               ))}
             </tr></thead>
             <tbody>
-              {filtered.map((s, i) => (
+              {sorted.map((s, i) => (
                 <tr key={i} className="border-b border-[#FEFDFB] hover:bg-[#FAF8F3] transition-colors last:border-0">
                   <td className="px-4 py-2.5 text-[#6B6B6B] whitespace-nowrap">{s.date}</td>
                   <td className="px-4 py-2.5 font-medium text-[#2D2D2D]">{s.name || '—'}</td>
                   <td className="px-4 py-2.5 text-[#4A4A4A]">{s.company || '—'}</td>
                   <td className="px-4 py-2.5 text-[#6B6B6B]">{s.title || '—'}</td>
                   <td className="px-4 py-2.5 capitalize text-[#4A4A4A]">{s.action}</td>
-                  <td className="px-4 py-2.5">
-                    {s.isIcp
-                      ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">ICP</span>
-                      : <span className="text-[#D4D4D4]">—</span>}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -869,40 +854,27 @@ function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSign
   if (combined.length === 0) return null
 
   const total = combined.length
-  const confirmed = combined.filter(s => s.isIcp).length
-  const matchRate = total > 0 ? (confirmed / total) * 100 : 0
 
   const companyCounts = useMemo(() => {
-    const map: Record<string, { total: number; icp: number }> = {}
-    combined.forEach(s => {
-      if (!s.company) return
-      if (!map[s.company]) map[s.company] = { total: 0, icp: 0 }
-      map[s.company].total++
-      if (s.isIcp) map[s.company].icp++
-    })
-    return Object.entries(map).sort((a, b) => b[1].total - a[1].total)
+    const map: Record<string, number> = {}
+    combined.forEach(s => { if (s.company) map[s.company] = (map[s.company] || 0) + 1 })
+    return Object.entries(map).sort((a, b) => b[1] - a[1])
   }, [combined])
 
   const trendData = useMemo(() => {
-    const byMonth: Record<string, { total: number; icp: number }> = {}
-    combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); if (!byMonth[mk]) byMonth[mk] = { total: 0, icp: 0 }; byMonth[mk].total++; if (s.isIcp) byMonth[mk].icp++ })
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-9).map(([date, v]) => ({ date, ...v }))
+    const byMonth: Record<string, number> = {}
+    combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); byMonth[mk] = (byMonth[mk] || 0) + 1 })
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-9).map(([date, total]) => ({ date, total }))
   }, [combined])
-
-  const recentConfirmed = useMemo(() =>
-    combined.filter(s => s.isIcp).sort((a, b) => (parseFlexDate(b.date)?.getTime() ?? 0) - (parseFlexDate(a.date)?.getTime() ?? 0)).slice(0, 8)
-  , [combined])
 
   const topCompany = companyCounts[0]?.[0] ?? null
 
   return (
     <div className="space-y-4 pt-5 border-t border-[#EEF1F5]">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">ICP Overview — All Time</p>
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard label="Total Signals" value={fmtN(total)} sub="All sources combined" />
-        <StatCard label="Confirmed ICP" value={fmtN(confirmed)} sub={confirmed > 0 ? `${fmtPct(matchRate, 0)} match rate` : 'No confirmed matches yet'} />
-        <StatCard label="Match Rate" value={fmtPct(matchRate, 0)} sub={`${confirmed} of ${total} signals`} />
-        <StatCard label="Top Company" value={topCompany ? (topCompany.length > 14 ? topCompany.slice(0, 14) + '…' : topCompany) : '—'} sub={topCompany ? `${companyCounts[0][1].total} signals` : 'No company data'} />
+      <div className="grid grid-cols-2 gap-4">
+        <StatCard label="Total ICP Signals" value={fmtN(total)} sub="All sources combined" />
+        <StatCard label="Top Company" value={topCompany ? (topCompany.length > 14 ? topCompany.slice(0, 14) + '…' : topCompany) : '—'} sub={topCompany ? `${companyCounts[0][1]} signals` : 'No company data'} />
       </div>
 
       {trendData.length > 1 && (
@@ -914,62 +886,30 @@ function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSign
               <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} width={28} />
               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
               <CartesianGrid vertical={false} stroke="#EEF1F5" />
-              <Line type="monotone" dataKey="total" stroke="#C7BFB8" strokeWidth={2} dot={false} name="All Signals" />
-              <Line type="monotone" dataKey="icp" stroke={BRAND} strokeWidth={2} dot={false} name="Confirmed ICP" />
+              <Line type="monotone" dataKey="total" stroke={BRAND} strokeWidth={2} dot={false} name="ICP Signals" />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      <div className={`grid gap-4 ${companyCounts.length > 0 && recentConfirmed.length > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-        {companyCounts.length > 0 && (
-          <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Top Companies</p>
-            <div className="space-y-2.5">
-              {companyCounts.slice(0, 6).map(([company, { total: ct, icp: ci }]) => (
-                <div key={company}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-[#4A4A4A] truncate flex-1 mr-2">{company}</span>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="text-xs text-[#6B6B6B]">{ct}</span>
-                      {ci > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">{ci} ICP</span>}
-                    </div>
-                  </div>
-                  <div className="h-1 bg-[#EEF1F5] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${(ct / companyCounts[0][1].total) * 100}%`, backgroundColor: BRAND }} />
-                  </div>
+      {companyCounts.length > 0 && (
+        <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Top Companies</p>
+          <div className="space-y-2.5">
+            {companyCounts.slice(0, 6).map(([company, ct]) => (
+              <div key={company}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-[#4A4A4A] truncate flex-1 mr-2">{company}</span>
+                  <span className="text-xs text-[#6B6B6B]">{ct}</span>
                 </div>
-              ))}
-            </div>
+                <div className="h-1 bg-[#EEF1F5] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${(ct / companyCounts[0][1]) * 100}%`, backgroundColor: BRAND }} />
+                </div>
+              </div>
+            ))}
           </div>
-        )}
-
-        {recentConfirmed.length > 0 && (
-          <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-[#EEF1F5]">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">Recent Confirmed ICP</p>
-            </div>
-            <table className="w-full text-xs">
-              <thead><tr className="border-b border-[#FEFDFB]">
-                {['Date', 'Name', 'Company', 'Action', 'Via'].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {recentConfirmed.map((s, i) => (
-                  <tr key={i} className="border-b border-[#FEFDFB] hover:bg-[#FAF8F3] transition-colors last:border-0">
-                    <td className="px-4 py-2.5 text-[#6B6B6B] whitespace-nowrap">{s.date}</td>
-                    <td className="px-4 py-2.5 font-medium text-[#2D2D2D]">{s.name || '—'}</td>
-                    <td className="px-4 py-2.5 text-[#4A4A4A]">{s.company || '—'}</td>
-                    <td className="px-4 py-2.5 capitalize text-[#4A4A4A]">{s.action}</td>
-                    <td className="px-4 py-2.5 text-[#6B6B6B]">{s.via ?? 'Org'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -978,28 +918,20 @@ function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSign
 
 function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcpSignals: ICPSignal[] }) {
   const combined = useMemo(() => allSignals(members, orgIcpSignals), [members, orgIcpSignals])
-  const [filter, setFilter] = useState<'all' | 'icp'>('all')
   const [search, setSearch] = useState('')
 
   const total = combined.length
-  const confirmed = combined.filter(s => s.isIcp).length
-  const matchRate = total > 0 ? (confirmed / total) * 100 : 0
 
   const companyCounts = useMemo(() => {
-    const map: Record<string, { total: number; icp: number }> = {}
-    combined.forEach(s => {
-      if (!s.company) return
-      if (!map[s.company]) map[s.company] = { total: 0, icp: 0 }
-      map[s.company].total++
-      if (s.isIcp) map[s.company].icp++
-    })
-    return Object.entries(map).sort((a, b) => b[1].total - a[1].total)
+    const map: Record<string, number> = {}
+    combined.forEach(s => { if (s.company) map[s.company] = (map[s.company] || 0) + 1 })
+    return Object.entries(map).sort((a, b) => b[1] - a[1])
   }, [combined])
 
   const trendData = useMemo(() => {
-    const byMonth: Record<string, { total: number; icp: number }> = {}
-    combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); if (!byMonth[mk]) byMonth[mk] = { total: 0, icp: 0 }; byMonth[mk].total++; if (s.isIcp) byMonth[mk].icp++ })
-    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([date, v]) => ({ date, ...v }))
+    const byMonth: Record<string, number> = {}
+    combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); byMonth[mk] = (byMonth[mk] || 0) + 1 })
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([date, total]) => ({ date, total }))
   }, [combined])
 
   const actionBreakdown = useMemo(() => {
@@ -1008,20 +940,13 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
     return Object.entries(map).sort((a, b) => b[1] - a[1])
   }, [combined])
 
-  const memberAttribution = useMemo(() => {
-    const items = members.filter(m => m.icpSignals.length > 0).map(m => ({ name: m.name, count: m.icpSignals.length }))
-    if (orgIcpSignals.length > 0) items.push({ name: 'Org (unattributed)', count: orgIcpSignals.length })
-    return items.sort((a, b) => b.count - a.count)
-  }, [members, orgIcpSignals])
-
-  const tableSignals = useMemo(() => {
-    let sigs: TaggedSignal[] = filter === 'icp' ? combined.filter(s => s.isIcp) : combined
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      sigs = sigs.filter(s => (s.name ?? '').toLowerCase().includes(q) || (s.company ?? '').toLowerCase().includes(q))
-    }
-    return [...sigs].sort((a, b) => (parseFlexDate(b.date)?.getTime() ?? 0) - (parseFlexDate(a.date)?.getTime() ?? 0)).slice(0, 100)
-  }, [combined, filter, search])
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return []
+    return [...combined]
+      .filter(s => (s.name ?? '').toLowerCase().includes(q) || (s.company ?? '').toLowerCase().includes(q))
+      .sort((a, b) => (parseFlexDate(b.date)?.getTime() ?? 0) - (parseFlexDate(a.date)?.getTime() ?? 0))
+  }, [combined, search])
 
   if (combined.length === 0) {
     return (
@@ -1037,31 +962,27 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard label="Total Signals" value={fmtN(total)} sub="All time · all sources" />
-        <StatCard label="Confirmed ICP" value={fmtN(confirmed)} sub={confirmed > 0 ? `${fmtPct(matchRate, 0)} of all signals` : 'No confirmed matches yet'} />
-        <StatCard label="Match Rate" value={fmtPct(matchRate, 0)} sub={`${confirmed} confirmed out of ${total}`} />
+      <div className="grid grid-cols-2 gap-4">
+        <StatCard label="Total ICP Signals" value={fmtN(total)} sub="All time · all sources" />
         <StatCard label="Companies Reached" value={companyCounts.length.toString()} sub={companyCounts[0] ? `Top: ${companyCounts[0][0]}` : 'No company data'} />
       </div>
 
       {trendData.length > 1 && (
         <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-1">Monthly Signal Trend</p>
-          <p className="text-xs text-[#6B6B6B] mb-4"><span style={{ color: '#C7BFB8' }}>●</span> All signals &nbsp; <span style={{ color: BRAND }}>●</span> Confirmed ICP</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Monthly Trend</p>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={trendData}>
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] }} />
               <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} width={28} />
               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
               <CartesianGrid vertical={false} stroke="#EEF1F5" />
-              <Line type="monotone" dataKey="total" stroke="#C7BFB8" strokeWidth={2} dot={false} name="All Signals" />
-              <Line type="monotone" dataKey="icp" stroke={BRAND} strokeWidth={2} dot={false} name="Confirmed ICP" />
+              <Line type="monotone" dataKey="total" stroke={BRAND} strokeWidth={2} dot={false} name="ICP Signals" />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-5">
+      <div className="grid grid-cols-2 gap-5">
         {actionBreakdown.length > 0 && (
           <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Signal Types</p>
@@ -1081,35 +1002,18 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
           </div>
         )}
 
-        {memberAttribution.length > 0 && (
-          <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Attribution</p>
-            <div className="space-y-3">
-              {memberAttribution.map(({ name, count }) => (
-                <div key={name}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-[#4A4A4A] truncate max-w-[130px]">{name}</span>
-                    <span className="text-xs font-semibold text-[#2D2D2D]">{count}</span>
-                  </div>
-                  <div className="h-1.5 bg-[#EEF1F5] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full bg-[#C7BFB8]" style={{ width: `${(count / memberAttribution[0].count) * 100}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {companyCounts.length > 0 && (
           <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Top Companies</p>
             <div className="space-y-3">
-              {companyCounts.slice(0, 7).map(([company, { total: ct, icp: ci }]) => (
-                <div key={company} className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-[#4A4A4A] truncate flex-1">{company}</span>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className="text-xs text-[#6B6B6B]">{ct}</span>
-                    {ci > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">{ci} ICP</span>}
+              {companyCounts.slice(0, 7).map(([company, ct]) => (
+                <div key={company}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-[#4A4A4A] truncate flex-1 mr-2">{company}</span>
+                    <span className="text-xs font-semibold text-[#2D2D2D]">{ct}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#EEF1F5] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${(ct / companyCounts[0][1]) * 100}%`, backgroundColor: BRAND }} />
                   </div>
                 </div>
               ))}
@@ -1119,43 +1023,38 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
       </div>
 
       <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#EEF1F5] flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">Signal Feed ({tableSignals.length})</p>
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg border border-[#E8ECF0] overflow-hidden text-xs">
-              <button onClick={() => setFilter('all')} className="px-3 py-1.5 font-medium transition-colors" style={filter === 'all' ? { backgroundColor: BRAND, color: 'white' } : { color: '#4A4A4A' }}>All</button>
-              <button onClick={() => setFilter('icp')} className="px-3 py-1.5 font-medium transition-colors border-l border-[#E8ECF0]" style={filter === 'icp' ? { backgroundColor: BRAND, color: 'white' } : { color: '#4A4A4A' }}>ICP Only</button>
-            </div>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name / company…"
-              className="bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-xs rounded-lg px-3 py-1.5 outline-none w-44 placeholder:text-[#D4D4D4]" />
-          </div>
+        <div className="px-5 py-4 border-b border-[#EEF1F5] flex items-center gap-3">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] flex-shrink-0">Search Signals</p>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or company…"
+            className="bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-xs rounded-lg px-3 py-1.5 outline-none flex-1 placeholder:text-[#D4D4D4]" />
         </div>
-        {tableSignals.length === 0 ? (
-          <div className="px-5 py-8 text-center text-xs text-[#6B6B6B]">No signals match your filter.</div>
+        {!search.trim() ? (
+          <div className="px-5 py-8 text-center text-xs text-[#6B6B6B]">{total} signals total — type a name or company to search</div>
+        ) : searchResults.length === 0 ? (
+          <div className="px-5 py-8 text-center text-xs text-[#6B6B6B]">No signals found for &ldquo;{search}&rdquo;</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-[#FEFDFB]">
-                  {['Date', 'Name', 'Company', 'Title', 'Action', 'ICP', 'Via'].map(h => (
+                  {['Date', 'Name', 'Company', 'Title', 'Action', 'LinkedIn'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {tableSignals.map((s, i) => (
+                {searchResults.map((s, i) => (
                   <tr key={i} className="border-b border-[#FEFDFB] hover:bg-[#FAF8F3] transition-colors last:border-0">
-                    <td className="px-4 py-3 text-xs text-[#6B6B6B] whitespace-nowrap">{s.date}</td>
-                    <td className="px-4 py-3 text-xs font-medium text-[#2D2D2D]">{s.name || '—'}</td>
-                    <td className="px-4 py-3 text-xs text-[#4A4A4A]">{s.company || '—'}</td>
-                    <td className="px-4 py-3 text-xs text-[#6B6B6B]">{s.title || '—'}</td>
-                    <td className="px-4 py-3 text-xs text-[#4A4A4A] capitalize">{s.action}</td>
+                    <td className="px-4 py-3 text-[#6B6B6B] whitespace-nowrap">{s.date}</td>
+                    <td className="px-4 py-3 font-medium text-[#2D2D2D]">{s.name || '—'}</td>
+                    <td className="px-4 py-3 text-[#4A4A4A]">{s.company || '—'}</td>
+                    <td className="px-4 py-3 text-[#6B6B6B]">{s.title || '—'}</td>
+                    <td className="px-4 py-3 capitalize text-[#4A4A4A]">{s.action}</td>
                     <td className="px-4 py-3">
-                      {s.isIcp
-                        ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">ICP</span>
-                        : <span className="text-xs text-[#D4D4D4]">—</span>}
+                      {s.source
+                        ? <a href={s.source} target="_blank" rel="noopener noreferrer" className="text-[#722F37] underline underline-offset-2 hover:opacity-70 transition-opacity">View</a>
+                        : <span className="text-[#D4D4D4]">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-xs text-[#6B6B6B]">{s.via ?? 'Org'}</td>
                   </tr>
                 ))}
               </tbody>
