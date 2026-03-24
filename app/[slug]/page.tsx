@@ -181,26 +181,38 @@ function paceStatus(current: number, goal: number, dayOfMonth: number, daysInMon
 
 // ─── Smart Merge ──────────────────────────────────────────────────────────────
 
+function isValidDate(s: string): boolean {
+  if (!s || !s.trim()) return false
+  const d = parseFlexDate(s)
+  if (!d) return false
+  const y = d.getFullYear()
+  return y > 2000 && y < 2100
+}
+
 function smartMergePosts(existing: Post[], incoming: Post[]): Post[] {
   const result = existing.map(p => ({ ...p }))
   for (const newPost of incoming) {
+    // Step 1: URL match (XLSX) — exact dedup, always replace
     if (newPost.url) {
       const idx = result.findIndex(p => p.url && p.url === newPost.url)
       if (idx >= 0) { result[idx] = newPost; continue }
     }
-    const sameDayIdxs = result.map((p, i) => ({ p, i })).filter(({ p }) => p.date === newPost.date)
-    if (sameDayIdxs.length === 1) {
-      const { p, i } = sameDayIdxs[0]
-      const diff = Math.abs(p.impressions - newPost.impressions)
-      const threshold = Math.max(p.impressions, newPost.impressions) * 0.25
-      if (diff <= threshold || p.impressions === 0) { result[i] = newPost; continue }
-    } else if (sameDayIdxs.length > 1) {
-      const best = sameDayIdxs.reduce((a, b) =>
-        Math.abs(a.p.impressions - newPost.impressions) <= Math.abs(b.p.impressions - newPost.impressions) ? a : b)
-      const diff = Math.abs(best.p.impressions - newPost.impressions)
-      const threshold = Math.max(best.p.impressions, newPost.impressions) * 0.25
-      if (diff <= threshold) { result[best.i] = newPost; continue }
+
+    // Step 2: Date match (CSV, no URL) — always replace with newer data
+    const sameDayNoUrl = result.map((p, i) => ({ p, i })).filter(({ p }) => p.date === newPost.date && !p.url)
+    if (sameDayNoUrl.length === 1 && !newPost.url) {
+      result[sameDayNoUrl[0].i] = newPost
+      continue
     }
+    if (sameDayNoUrl.length > 1 && !newPost.url) {
+      // Multiple posts same date without URLs — replace closest by impressions
+      const closest = sameDayNoUrl.reduce((a, b) =>
+        Math.abs(a.p.impressions - newPost.impressions) <= Math.abs(b.p.impressions - newPost.impressions) ? a : b)
+      result[closest.i] = newPost
+      continue
+    }
+
+    // Step 3: No match — genuinely new post
     result.push(newPost)
   }
   return result
@@ -242,7 +254,11 @@ async function parseLinkedInFile(file: File): Promise<ParsedLinkedInFile> {
     const form = new FormData()
     form.append('file', file)
     const res = await fetch('/api/parse-linkedin', { method: 'POST', body: form })
-    if (res.ok) return res.json()
+    if (res.ok) {
+      const data = await res.json()
+      data.posts = (data.posts ?? []).filter((p: Post) => isValidDate(p.date))
+      return data
+    }
   }
   const text = await readFileText(file)
   const { posts, detectedColumns } = parseLinkedInCSV(text)
@@ -300,7 +316,7 @@ function parseLinkedInCSV(text: string): { posts: Post[]; detectedColumns: strin
     const date = findVal(row, ['content publish date', 'publish date', 'published date', 'date', 'published_date', 'post date'])
     const url = findVal(row, ['post url', 'post link', 'url', 'link']) || findVal(row, ['content'])
     return { date, url, impressions, clicks, likes, comments, shares, follows, engagements, engagementRate }
-  }).filter(p => p.impressions > 0)
+  }).filter(p => p.impressions > 0 && isValidDate(p.date))
   return { posts, detectedColumns }
 }
 
@@ -357,7 +373,7 @@ function parseICPSignalsCSV(text: string): ICPSignal[] {
       source: findVal(row, ['post', 'source', 'url', 'link', 'post url']) || undefined,
       isIcp: isIcpRaw ? (isIcpRaw === 'true' || isIcpRaw === '1' || isIcpRaw === 'yes') : undefined,
     }
-  }).filter(s => s.date)
+  }).filter(s => s.date && isValidDate(s.date))
 }
 
 async function parseICPFile(file: File): Promise<ICPSignal[]> {
@@ -366,12 +382,10 @@ async function parseICPFile(file: File): Promise<ICPSignal[]> {
     const form = new FormData()
     form.append('file', file)
     const res = await fetch('/api/parse-icp', { method: 'POST', body: form })
-    if (!res.ok) throw new Error('Failed to parse XLSX')
+    if (!res.ok) throw new Error('Couldn\'t read this file. Try re-downloading it or saving as CSV.')
     const json = await res.json()
-    const d = json._debug
     if (!json.signals || json.signals.length === 0) {
-      const cols = d?.columns?.join(', ') || 'none'
-      throw new Error(`Parsed ${d?.rowCount ?? 0} rows (${d?.format ?? '?'} format). Columns found: ${cols}`)
+      throw new Error('No ICP signals found in this file. Make sure it has columns like name, date, and company.')
     }
     return json.signals
   }
@@ -465,7 +479,7 @@ function MiniDropZone({ label, onFile }: {
   const [errMsg, setErrMsg] = useState('')
   const handle = useCallback((f: File) => {
     const ok = /\.(csv|xlsx|xls|xlsm)$/i.test(f.name)
-    if (!ok) { setErrMsg('Upload a CSV or XLSX file'); setStatus('err'); setTimeout(() => setStatus('idle'), 4000); return }
+    if (!ok) { setErrMsg('This file type isn\'t supported. Please upload a .csv or .xlsx file.'); setStatus('err'); setTimeout(() => setStatus('idle'), 4000); return }
     onFile(f, (success, msg) => {
       if (success) { setStatus('ok'); setTimeout(() => setStatus('idle'), 3000) }
       else { setErrMsg(msg || 'No data found'); setStatus('err'); setTimeout(() => setStatus('idle'), 5000) }
@@ -556,47 +570,79 @@ function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone, orgIc
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editRole, setEditRole] = useState('')
+  const [pendingUpload, setPendingUpload] = useState<{
+    memberId: string; memberName: string; type: 'posts' | 'icp'
+    data: Partial<Pick<Member, 'posts' | 'icpSignals' | 'followerHistory'>>
+    summary: { postCount: number; dateRange?: string; totalImpressions: number; followerMonths: number; signalCount: number; noFollowerData: boolean }
+    warning?: string
+    onResult: (success: boolean, msg?: string) => void
+  } | null>(null)
+
+  function computeSummary(posts: Post[], followers: FollowerEntry[], signals: ICPSignal[]) {
+    const dates = posts.map(p => p.date).filter(Boolean).sort()
+    const from = dates[0]; const to = dates[dates.length - 1]
+    const fromLabel = from ? monthLabel(from.slice(0, 7)) : ''
+    const toLabel = to ? monthLabel(to.slice(0, 7)) : ''
+    const dateRange = fromLabel && toLabel ? (fromLabel === toLabel ? fromLabel : `${fromLabel} – ${toLabel}`) : ''
+    return {
+      postCount: posts.length,
+      dateRange: dateRange || undefined,
+      totalImpressions: posts.reduce((s, p) => s + p.impressions, 0),
+      followerMonths: followers.length,
+      signalCount: signals.length,
+      noFollowerData: posts.length > 0 && followers.length === 0,
+    }
+  }
+
+  function detectMismatch(existing: Post[], incoming: Post[]): string | undefined {
+    if (existing.length === 0 || incoming.length === 0) return undefined
+    const existingMonths = new Set(existing.map(p => p.date?.slice(0, 7)).filter(Boolean))
+    const incomingMonths = new Set(incoming.map(p => p.date?.slice(0, 7)).filter(Boolean))
+    const overlap = [...incomingMonths].some(m => existingMonths.has(m))
+    if (!overlap) {
+      const eRange = [...existingMonths].sort(); const iRange = [...incomingMonths].sort()
+      return `This file covers ${iRange[0]} to ${iRange[iRange.length - 1]}, but this member's existing data is from ${eRange[0]} to ${eRange[eRange.length - 1]}. Are you uploading the right person's file?`
+    }
+    return undefined
+  }
 
   function handleUpdateFile(memberId: string, file: File, type: 'posts' | 'icp', onResult: (success: boolean, msg?: string) => void) {
     if (type === 'posts') {
-      parseLinkedInFile(file).then(({ posts: incoming, followerHistory: incomingFollowers, detectedColumns }) => {
+      parseLinkedInFile(file).then(({ posts: incoming, followerHistory: incomingFollowers }) => {
         const member = members.find(m => m.id === memberId)
         if (!member) { onResult(false, 'Member not found'); return }
         if (incoming.length === 0 && incomingFollowers.length === 0) {
-          const hint = detectedColumns.length > 0
-            ? `Parsed as XLSX — Columns: ${detectedColumns.slice(0, 4).join(', ')}… — No posts found. Make sure "TOP POSTS" sheet has data.`
-            : 'No data found — upload the LinkedIn Analytics 90-day XLSX (5 sheets: Discovery, Engagement, Top Posts, Followers, Demographics)'
-          onResult(false, hint); return
+          onResult(false, 'No data found in this file. Go to LinkedIn → Analytics → download the 90-day export as XLSX.'); return
         }
-        onUpdate(memberId, {
-          posts: smartMergePosts(member.posts, incoming),
-          followerHistory: smartMergeFollowers(member.followerHistory, incomingFollowers),
-        })
-        onResult(true)
+        const merged = smartMergePosts(member.posts, incoming)
+        const mergedFollowers = smartMergeFollowers(member.followerHistory, incomingFollowers)
+        const summary = computeSummary(incoming, incomingFollowers, [])
+        const warning = detectMismatch(member.posts, incoming)
+        setPendingUpload({ memberId, memberName: member.name, type, data: { posts: merged, followerHistory: mergedFollowers }, summary, warning, onResult })
       }).catch(err => onResult(false, (err as Error).message))
     } else {
       parseICPFile(file).then(incoming => {
         const member = members.find(m => m.id === memberId)
         if (!member) { onResult(false, 'Member not found'); return }
-        onUpdate(memberId, { icpSignals: smartMergeICP(member.icpSignals, incoming) })
-        onResult(true)
+        if (incoming.length === 0) { onResult(false, 'No signals found in this file. It may be empty or in an unexpected format.'); return }
+        const merged = smartMergeICP(member.icpSignals, incoming)
+        const summary = computeSummary([], [], incoming)
+        setPendingUpload({ memberId, memberName: member.name, type, data: { icpSignals: merged }, summary, onResult })
       }).catch(err => onResult(false, (err as Error).message))
     }
   }
 
   function handleNewFile(file: File, type: 'posts' | 'icp') {
     if (type === 'posts') {
-      parseLinkedInFile(file).then(({ posts, followerHistory, detectedColumns }) => {
+      parseLinkedInFile(file).then(({ posts, followerHistory }) => {
         if (posts.length === 0 && followerHistory.length === 0) {
-          const hint = detectedColumns.length > 0
-            ? `Parsed as XLSX — Columns: ${detectedColumns.slice(0, 4).join(', ')}… — No posts found in "TOP POSTS" sheet.`
-            : 'No data found. Upload the LinkedIn Analytics 90-day XLSX (has 5 sheets: Discovery, Engagement, Top Posts, Followers, Demographics).'
-          setAddError(hint); return
+          setAddError('No data found in this file. Go to LinkedIn → Analytics → download the 90-day export as XLSX.'); return
         }
         setNewPosts(posts); setNewPostsLoaded(true); setAddError(''); setNewFollowerHistory(followerHistory)
       }).catch(err => setAddError((err as Error).message))
     } else {
       parseICPFile(file).then(signals => {
+        if (signals.length === 0) { setAddError('No signals found in this file. It may be empty or in an unexpected format.'); return }
         setNewIcpSignals(signals); setNewIcpLoaded(true)
       }).catch(err => setAddError((err as Error).message))
     }
@@ -798,6 +844,59 @@ function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone, orgIc
           </button>
         )}
       </main>
+
+      {pendingUpload && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-[#E8ECF0] p-6 max-w-sm w-full shadow-xl">
+            <p className="text-sm font-semibold text-[#2D2D2D] mb-1">Review Upload</p>
+            <p className="text-xs text-[#6B6B6B] mb-4">Updating {pendingUpload.memberName}</p>
+
+            <div className="space-y-2 mb-4">
+              {pendingUpload.summary.postCount > 0 && (
+                <div className="bg-[#FAF8F3] rounded-lg px-3 py-2">
+                  <p className="text-sm font-medium text-[#2D2D2D]">{pendingUpload.summary.postCount} posts</p>
+                  {pendingUpload.summary.dateRange && <p className="text-xs text-[#6B6B6B]">{pendingUpload.summary.dateRange}</p>}
+                  <p className="text-xs text-[#6B6B6B]">{fmtN(pendingUpload.summary.totalImpressions)} total impressions</p>
+                </div>
+              )}
+              {pendingUpload.summary.followerMonths > 0 && (
+                <p className="text-xs text-[#6B6B6B]">{pendingUpload.summary.followerMonths} months of follower data</p>
+              )}
+              {pendingUpload.summary.noFollowerData && (
+                <p className="text-xs text-amber-600">Note: no follower data found in this file.</p>
+              )}
+              {pendingUpload.summary.signalCount > 0 && (
+                <div className="bg-[#FAF8F3] rounded-lg px-3 py-2">
+                  <p className="text-sm font-medium text-[#2D2D2D]">{pendingUpload.summary.signalCount} ICP signals</p>
+                </div>
+              )}
+            </div>
+
+            {pendingUpload.warning && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                <p className="text-xs text-amber-800">{pendingUpload.warning}</p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button onClick={() => { setPendingUpload(null); pendingUpload.onResult(false) }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-[#E8ECF0] text-[#4A4A4A]">
+                Cancel
+              </button>
+              <button onClick={() => {
+                const { memberId, data, onResult } = pendingUpload
+                setPendingUpload(null)
+                onUpdate(memberId, data)
+                onResult(true, pendingUpload.summary.noFollowerData ? 'Updated (no follower data in file)' : undefined)
+              }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: BRAND }}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

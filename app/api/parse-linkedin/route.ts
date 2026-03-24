@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       }
     }
     for (const p of Array.from(postMap.values())) {
-      if (!p.date) continue
+      if (!p.date || isNaN(new Date(p.date).getTime())) continue
       const imp = p.impressions ?? 0, eng = p.engagements ?? 0
       posts.push({
         date: p.date, url: p.url, impressions: imp, engagements: eng,
