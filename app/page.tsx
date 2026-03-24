@@ -133,12 +133,12 @@ export default function AdminPage() {
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="text-xs text-[#6B6B6B] block mb-1.5">Name *</label>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. FBF"
+                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Acme Corp"
                   className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-3 py-2.5 outline-none placeholder:text-[#D4D4D4]" />
               </div>
               <div>
                 <label className="text-xs text-[#6B6B6B] block mb-1.5">Slug (URL) *</label>
-                <input value={newSlug} onChange={e => setNewSlug(e.target.value)} placeholder="e.g. fbf"
+                <input value={newSlug} onChange={e => setNewSlug(e.target.value)} placeholder="e.g. acme-corp"
                   className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-3 py-2.5 outline-none placeholder:text-[#D4D4D4]" />
               </div>
             </div>

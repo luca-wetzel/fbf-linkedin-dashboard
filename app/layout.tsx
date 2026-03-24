@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
 export const metadata: Metadata = {
-  title: 'LinkedIn Dashboard — notus',
-  description: 'LinkedIn performance analytics by notus',
+  title: 'LinkedIn Dashboard — by notus',
+  description: 'LinkedIn performance analytics for your organization',
   icons: { icon: '/favicon.svg' },
 }
 
