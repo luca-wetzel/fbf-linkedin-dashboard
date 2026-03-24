@@ -11,7 +11,7 @@ import Papa from 'papaparse'
 import {
   Upload, Plus, Users, ChevronDown,
   FileText, Star, Trash2, BarChart2,
-  UserPlus, RefreshCw, X, Check, Zap
+  UserPlus, RefreshCw, X, Check, Zap, Menu
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -604,13 +604,13 @@ function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone, orgIc
 
   return (
     <div className="min-h-screen bg-[#FEFDFB]">
-      <header className="bg-white border-b border-[#E8ECF0] px-6 py-4">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <header className="bg-white border-b border-[#E8ECF0] px-4 py-3 md:px-6 md:py-4">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <NotusLogo />
-            <div>
-              <p className="text-sm font-semibold text-[#2D2D2D]">{orgName} — Manage Dashboard</p>
-              <p className="text-xs text-[#6B6B6B]">Add, update, or remove team members</p>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#2D2D2D] truncate">{orgName} — Manage</p>
+              <p className="text-xs text-[#6B6B6B] hidden md:block">Add, update, or remove team members</p>
             </div>
           </div>
           {members.length > 0 && (
@@ -982,7 +982,7 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {actionBreakdown.length > 0 && (
           <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Signal Types</p>
@@ -1093,7 +1093,7 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
 
   return (
     <div className="space-y-5">
-      <div className={`grid gap-4 ${hasIcp ? 'grid-cols-4' : 'grid-cols-3'}`}>
+      <div className={`grid grid-cols-2 gap-4 ${hasIcp ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
         <StatCard label="Team Impressions" value={fmtN(totalImpressions)} sub={`${members.length} members · ${monthLabel(selectedMonth)}`} />
         <StatCard label="Posts Published" value={totalPosts.toString()} sub={`${fmtN(totalImpressions / Math.max(totalPosts, 1))} avg impressions / post`} />
         <StatCard label="Follower Growth" value={`+${fmtN(totalFollowers)}`} sub={monthLabel(selectedMonth)} />
@@ -1274,7 +1274,7 @@ function MemberView({ member, goals, onGoalsChange }: {
         </div>
       </div>
 
-      <div className={`grid gap-4 ${hasIcp ? 'grid-cols-4' : 'grid-cols-3'}`}>
+      <div className={`grid grid-cols-2 gap-4 ${hasIcp ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
         <StatCard label="Impressions" value={fmtN(totalImpressions)}
           trend={impDiff !== null ? { text: `${Math.abs(impDiff).toFixed(0)}% vs prev month`, positive: impDiff >= 0 } : null}
           sub={`${mp.length} posts · ${fmtN(avgPerPost)}/post`} />
@@ -1430,6 +1430,7 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
   const [error, setError] = useState('')
   const [saveError, setSaveError] = useState('')
   const [orgIcpSignals, setOrgIcpSignals] = useState<ICPSignal[]>([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
     if (!apiKey) { setError('Access denied — missing API key. Use the link provided by your admin.'); setLoading(false); return }
@@ -1547,23 +1548,49 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
 
   const activeMember = members.find(m => m.id === activeTab) ?? null
 
+  const navClick = (tab: string) => { setActiveTab(tab); setSidebarOpen(false) }
+
   return (
-    <div className="flex h-screen bg-[#FEFDFB] overflow-hidden">
-      <aside className="w-44 bg-white border-r border-[#E8ECF0] flex flex-col flex-shrink-0">
-        <div className="px-4 py-4 border-b border-[#EEF1F5]">
-          <NotusLogo />
-          <p className="text-xs font-semibold text-[#2D2D2D] mt-2 truncate">{orgName}</p>
+    <div className="flex flex-col md:flex-row h-screen bg-[#FEFDFB] overflow-hidden">
+      {/* Mobile top bar */}
+      <div className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-[#E8ECF0] flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setSidebarOpen(true)} className="p-1 -ml-1"><Menu className="w-5 h-5 text-[#4A4A4A]" /></button>
+          <p className="text-sm font-semibold text-[#2D2D2D] truncate">{orgName}</p>
+        </div>
+        {activeTab === 'leaderboard' && allMonthsAcross.length > 1 && (
+          <div className="relative">
+            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
+              className="bg-white border border-[#E8ECF0] text-[#2D2D2D] text-xs rounded-lg pl-2 pr-6 py-1.5 outline-none cursor-pointer appearance-none">
+              {allMonthsAcross.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
+            <ChevronDown className="w-3 h-3 text-[#D4D4D4] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        )}
+      </div>
+
+      {/* Sidebar overlay backdrop (mobile) */}
+      {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
+
+      {/* Sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E8ECF0] flex flex-col flex-shrink-0 transition-transform duration-200 md:static md:w-44 md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="px-4 py-4 border-b border-[#EEF1F5] flex items-center justify-between">
+          <div>
+            <NotusLogo />
+            <p className="text-xs font-semibold text-[#2D2D2D] mt-2 truncate">{orgName}</p>
+          </div>
+          <button onClick={() => setSidebarOpen(false)} className="md:hidden p-1"><X className="w-4 h-4 text-[#6B6B6B]" /></button>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-3">
           <SectionLabel>Navigation</SectionLabel>
-          <NavItem label="Team" active={activeTab === 'leaderboard'} onClick={() => setActiveTab('leaderboard')} icon={<Users className="w-4 h-4" />} />
-          <NavItem label="ICP Pipeline" active={activeTab === 'icp'} onClick={() => setActiveTab('icp')} icon={<Zap className="w-4 h-4" />} />
+          <NavItem label="Team" active={activeTab === 'leaderboard'} onClick={() => navClick('leaderboard')} icon={<Users className="w-4 h-4" />} />
+          <NavItem label="ICP Pipeline" active={activeTab === 'icp'} onClick={() => navClick('icp')} icon={<Zap className="w-4 h-4" />} />
           {members.length > 0 && (
             <>
               <SectionLabel>Members</SectionLabel>
               {members.map(m => (
                 <NavItem key={m.id} label={m.name.split(' ')[0]} active={activeTab === m.id}
-                  onClick={() => setActiveTab(m.id)} onDelete={() => handleDelete(m.id)}
+                  onClick={() => navClick(m.id)} onDelete={() => handleDelete(m.id)}
                   icon={
                     <div className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
                       style={{ backgroundColor: activeTab === m.id ? 'rgba(255,255,255,0.3)' : '#E8ECF0', color: activeTab === m.id ? 'white' : BRAND }}>
@@ -1577,18 +1604,18 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
         </nav>
         <div className="px-3 py-3 border-t border-[#EEF1F5]">
           <SectionLabel>Settings</SectionLabel>
-          <NavItem label="Manage" active={false} onClick={() => setView('manage')} icon={<UserPlus className="w-4 h-4" />} />
+          <NavItem label="Manage" active={false} onClick={() => { setView('manage'); setSidebarOpen(false) }} icon={<UserPlus className="w-4 h-4" />} />
         </div>
         <div className="px-4 py-3 border-t border-[#EEF1F5]"><p className="text-[10px] text-[#D4D4D4]">by notus</p></div>
       </aside>
 
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-6 py-6">
+        <div className="max-w-5xl mx-auto px-4 py-4 md:px-6 md:py-6">
           {activeTab === 'leaderboard' ? (
-            <div className="flex items-center justify-between mb-6">
-              <div><h1 className="text-2xl font-semibold text-[#2D2D2D]">Team</h1><p className="text-sm text-[#6B6B6B] mt-0.5">LinkedIn performance overview</p></div>
+            <div className="flex items-center justify-between mb-4 md:mb-6">
+              <div><h1 className="text-xl md:text-2xl font-semibold text-[#2D2D2D]">Team</h1><p className="text-sm text-[#6B6B6B] mt-0.5">LinkedIn performance overview</p></div>
               {allMonthsAcross.length > 1 && (
-                <div className="relative">
+                <div className="relative hidden md:block">
                   <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
                     className="bg-white border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg pl-3 pr-8 py-2 outline-none cursor-pointer appearance-none">
                     {allMonthsAcross.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
@@ -1598,13 +1625,13 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
               )}
             </div>
           ) : activeTab === 'icp' ? (
-            <div className="mb-6">
-              <h1 className="text-2xl font-semibold text-[#2D2D2D]">ICP Pipeline</h1>
+            <div className="mb-4 md:mb-6">
+              <h1 className="text-xl md:text-2xl font-semibold text-[#2D2D2D]">ICP Pipeline</h1>
               <p className="text-sm text-[#6B6B6B] mt-0.5">Signal tracking across all sources</p>
             </div>
           ) : activeMember ? (
-            <div className="mb-6">
-              <h1 className="text-2xl font-semibold text-[#2D2D2D]">{activeMember.name}</h1>
+            <div className="mb-4 md:mb-6">
+              <h1 className="text-xl md:text-2xl font-semibold text-[#2D2D2D]">{activeMember.name}</h1>
               <p className="text-sm text-[#6B6B6B] mt-0.5">{activeMember.role || 'LinkedIn Performance'}</p>
             </div>
           ) : null}
