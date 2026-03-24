@@ -1,22 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabase } from '@/lib/supabase'
-
-async function getOrg(slug: string) {
-  const { data } = await getSupabase()
-    .from('li_organizations')
-    .select('id')
-    .eq('slug', slug)
-    .single()
-  return data
-}
+import { getServiceSupabase } from '@/lib/supabase'
+import { authenticateOrg } from '@/lib/auth'
 
 export async function POST(req: NextRequest, { params }: { params: { slug: string } }) {
-  const org = await getOrg(params.slug)
-  if (!org) return NextResponse.json({ error: 'Org not found' }, { status: 404 })
+  const auth = await authenticateOrg(req, params.slug)
+  if (!auth.ok) return auth.response
+  const org = auth.org
 
   const { signals } = await req.json()
 
-  const { error: delErr } = await getSupabase().from('li_org_icp_signals').delete().eq('org_id', org.id)
+  const { error: delErr } = await getServiceSupabase().from('li_org_icp_signals').delete().eq('org_id', org.id)
   if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
 
   if (signals && signals.length > 0) {
@@ -33,17 +26,17 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       source: s.source ?? null,
       is_icp: s.isIcp ?? false,
     }))
-    const { error: insErr } = await getSupabase().from('li_org_icp_signals').insert(rows)
+    const { error: insErr } = await getServiceSupabase().from('li_org_icp_signals').insert(rows)
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true, count: signals?.length ?? 0 })
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { slug: string } }) {
-  const org = await getOrg(params.slug)
-  if (!org) return NextResponse.json({ error: 'Org not found' }, { status: 404 })
+export async function DELETE(req: NextRequest, { params }: { params: { slug: string } }) {
+  const auth = await authenticateOrg(req, params.slug)
+  if (!auth.ok) return auth.response
 
-  await getSupabase().from('li_org_icp_signals').delete().eq('org_id', org.id)
+  await getServiceSupabase().from('li_org_icp_signals').delete().eq('org_id', auth.org.id)
   return NextResponse.json({ ok: true })
 }

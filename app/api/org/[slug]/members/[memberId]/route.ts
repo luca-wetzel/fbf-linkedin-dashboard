@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabase } from '@/lib/supabase'
+import { getServiceSupabase } from '@/lib/supabase'
+import { authenticateOrg, verifyMemberBelongsToOrg } from '@/lib/auth'
 
 type Ctx = { params: { slug: string; memberId: string } }
 
 // PATCH: update name/role and/or replace posts/followers/icp
 export async function PATCH(req: NextRequest, { params }: Ctx) {
+  const auth = await authenticateOrg(req, params.slug)
+  if (!auth.ok) return auth.response
+
   const { memberId } = params
+  const belongs = await verifyMemberBelongsToOrg(memberId, auth.org.id)
+  if (!belongs) return NextResponse.json({ error: 'Member not found in this org' }, { status: 403 })
+
   const body = await req.json()
 
   // Update name/role if provided
@@ -13,14 +20,14 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const patch: Record<string, string> = {}
     if (body.name !== undefined) patch.name = body.name
     if (body.role !== undefined) patch.role = body.role
-    await getSupabase().from('li_members').update(patch).eq('id', memberId)
+    await getServiceSupabase().from('li_members').update(patch).eq('id', memberId)
   }
 
   // Replace posts if provided
   if (body.posts !== undefined) {
-    await getSupabase().from('li_posts').delete().eq('member_id', memberId)
+    await getServiceSupabase().from('li_posts').delete().eq('member_id', memberId)
     if (body.posts.length > 0) {
-      await getSupabase().from('li_posts').insert(
+      await getServiceSupabase().from('li_posts').insert(
         body.posts.map((p: Record<string, unknown>) => ({
           member_id: memberId,
           date: p.date, url: p.url ?? null,
@@ -35,9 +42,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
   // Replace follower history if provided
   if (body.followerHistory !== undefined) {
-    await getSupabase().from('li_follower_history').delete().eq('member_id', memberId)
+    await getServiceSupabase().from('li_follower_history').delete().eq('member_id', memberId)
     if (body.followerHistory.length > 0) {
-      await getSupabase().from('li_follower_history').insert(
+      await getServiceSupabase().from('li_follower_history').insert(
         body.followerHistory.map((f: { date: string; newFollowers: number }) => ({
           member_id: memberId, date: f.date, new_followers: f.newFollowers,
         }))
@@ -47,9 +54,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
   // Replace ICP signals if provided
   if (body.icpSignals !== undefined) {
-    await getSupabase().from('li_icp_signals').delete().eq('member_id', memberId)
+    await getServiceSupabase().from('li_icp_signals').delete().eq('member_id', memberId)
     if (body.icpSignals.length > 0) {
-      await getSupabase().from('li_icp_signals').insert(
+      await getServiceSupabase().from('li_icp_signals').insert(
         body.icpSignals.map((s: Record<string, unknown>) => ({
           member_id: memberId,
           date: s.date, name: s.name ?? null, company: s.company ?? null,
@@ -64,8 +71,14 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 }
 
 // DELETE: remove member (cascades posts/followers/icp/goals)
-export async function DELETE(_req: NextRequest, { params }: Ctx) {
+export async function DELETE(req: NextRequest, { params }: Ctx) {
+  const auth = await authenticateOrg(req, params.slug)
+  if (!auth.ok) return auth.response
+
   const { memberId } = params
-  await getSupabase().from('li_members').delete().eq('id', memberId)
+  const belongs = await verifyMemberBelongsToOrg(memberId, auth.org.id)
+  if (!belongs) return NextResponse.json({ error: 'Member not found in this org' }, { status: 403 })
+
+  await getServiceSupabase().from('li_members').delete().eq('id', memberId)
   return NextResponse.json({ ok: true })
 }

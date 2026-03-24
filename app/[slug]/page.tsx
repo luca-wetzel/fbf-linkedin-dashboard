@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -1400,6 +1400,26 @@ function MemberView({ member, goals, onGoalsChange }: {
 
 export default function OrgPage({ params }: { params: { slug: string } }) {
   const { slug } = params
+  const searchParams = useSearchParams()
+
+  // API key auth: read from URL ?key=..., persist in localStorage
+  const apiKey = useMemo(() => {
+    const fromUrl = searchParams.get('key')
+    if (fromUrl) {
+      try { localStorage.setItem(`dashboard_key_${slug}`, fromUrl) } catch {}
+      return fromUrl
+    }
+    try { return localStorage.getItem(`dashboard_key_${slug}`) ?? '' } catch { return '' }
+  }, [slug, searchParams])
+
+  const authFetch = useCallback((url: string, opts: RequestInit = {}) => {
+    const headers = new Headers(opts.headers)
+    if (apiKey) headers.set('x-api-key', apiKey)
+    if (!headers.has('Content-Type') && opts.body && typeof opts.body === 'string') {
+      headers.set('Content-Type', 'application/json')
+    }
+    return fetch(url, { ...opts, headers })
+  }, [apiKey])
 
   const [members, setMembers] = useState<Member[]>([])
   const [goals, setGoals] = useState<Goals>({})
@@ -1411,8 +1431,9 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
   const [orgIcpSignals, setOrgIcpSignals] = useState<ICPSignal[]>([])
 
   useEffect(() => {
-    fetch(`/api/org/${slug}`)
-      .then(r => r.json())
+    if (!apiKey) { setError('Access denied — missing API key. Use the link provided by your admin.'); setLoading(false); return }
+    authFetch(`/api/org/${slug}`)
+      .then(r => { if (r.status === 401) throw new Error('Invalid API key'); return r.json() })
       .then(data => {
         if (data.error) { setError(data.error); return }
         setOrgName(data.org?.name ?? slug)
@@ -1421,9 +1442,9 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
         setOrgIcpSignals(data.orgIcpSignals ?? [])
         if ((data.members ?? []).length > 0) { setView('dashboard'); setActiveTab('leaderboard') }
       })
-      .catch(() => setError('Failed to load dashboard'))
+      .catch((e) => setError(e.message || 'Failed to load dashboard'))
       .finally(() => setLoading(false))
-  }, [slug])
+  }, [slug, apiKey, authFetch])
 
   const allMonthsAcross = useMemo(() => {
     const keys = new Set<string>()
@@ -1436,9 +1457,8 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
 
   function handleUpdate(id: string, patch: Partial<Pick<Member, 'name' | 'role' | 'posts' | 'icpSignals' | 'followerHistory'>>) {
     setMembers(prev => prev.map(m => m.id === id ? { ...m, ...patch } : m))
-    fetch(`/api/org/${slug}/members/${id}`, {
+    authFetch(`/api/org/${slug}/members/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     }).catch(console.error)
   }
@@ -1450,14 +1470,13 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
       else if (activeTab === id) setActiveTab('leaderboard')
       return updated
     })
-    fetch(`/api/org/${slug}/members/${id}`, { method: 'DELETE' }).catch(console.error)
+    authFetch(`/api/org/${slug}/members/${id}`, { method: 'DELETE' }).catch(console.error)
   }
 
   async function handleOrgIcpUpload(signals: ICPSignal[]) {
     setOrgIcpSignals(signals)
-    const res = await fetch(`/api/org/${slug}/org-icp`, {
+    const res = await authFetch(`/api/org/${slug}/org-icp`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ signals }),
     })
     if (!res.ok) {
@@ -1468,13 +1487,12 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
 
   async function handleOrgIcpClear() {
     setOrgIcpSignals([])
-    await fetch(`/api/org/${slug}/org-icp`, { method: 'DELETE' })
+    await authFetch(`/api/org/${slug}/org-icp`, { method: 'DELETE' })
   }
 
   async function handleAdd(data: NewMemberData) {
-    const res = await fetch(`/api/org/${slug}/members`, {
+    const res = await authFetch(`/api/org/${slug}/members`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     })
     if (!res.ok) throw new Error('Failed to add member')
@@ -1587,9 +1605,8 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
                 onGoalsChange={g => {
                   const newGoals = { ...goals, [activeMember.id]: g }
                   setGoals(newGoals)
-                  fetch(`/api/org/${slug}/goals`, {
+                  authFetch(`/api/org/${slug}/goals`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newGoals),
                   }).catch(console.error)
                 }} />

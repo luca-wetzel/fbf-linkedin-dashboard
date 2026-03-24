@@ -9,6 +9,7 @@ interface Org {
   id: string
   slug: string
   name: string
+  api_key?: string
   created_at: string
 }
 
@@ -177,11 +178,11 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <a href={`/${org.slug}`} target="_blank" rel="noopener noreferrer"
+                    <a href={`/${org.slug}?key=${org.api_key ?? ''}`} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-[#E8ECF0] text-[#4A4A4A] hover:bg-[#FEFDFB] transition-colors">
                       <ExternalLink className="w-3 h-3" /> Open
                     </a>
-                    <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/${org.slug}`)}
+                    <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/${org.slug}?key=${org.api_key ?? ''}`); }}
                       className="text-xs font-medium px-3 py-1.5 rounded-lg border border-[#E8ECF0] text-[#4A4A4A] hover:bg-[#FEFDFB] transition-colors">
                       Copy Link
                     </button>
