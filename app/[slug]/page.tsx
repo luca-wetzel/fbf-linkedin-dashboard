@@ -135,6 +135,15 @@ function icpForMonth(signals: ICPSignal[], mk: string): ICPSignal[] {
   return signals.filter(s => { const d = parseFlexDate(s.date); return d ? monthKey(d) === mk : false })
 }
 
+type TaggedSignal = ICPSignal & { via?: string }
+
+function allSignals(members: Member[], orgIcpSignals: ICPSignal[]): TaggedSignal[] {
+  return [
+    ...orgIcpSignals.map(s => ({ ...s, via: undefined as string | undefined })),
+    ...members.flatMap(m => m.icpSignals.map(s => ({ ...s, via: m.name }))),
+  ]
+}
+
 function uniqueMonths(posts: Post[]): string[] {
   const keys = new Set<string>()
   posts.forEach(p => { const d = parseFlexDate(p.date); if (d) keys.add(monthKey(d)) })
@@ -414,14 +423,16 @@ function MiniDropZone({ label, onFile }: {
     <div className="flex flex-col gap-1">
       <input ref={ref} type="file" accept=".csv,.xlsx,.xls,.xlsm" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; if (f) handle(f); e.target.value = '' }} />
-      <button onClick={() => ref.current?.click()}
+      <div role="button" tabIndex={0}
+        onClick={() => ref.current?.click()}
+        onKeyDown={e => e.key === 'Enter' && ref.current?.click()}
         onDragOver={e => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) handle(f) }}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all" style={style}>
+        className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer" style={style}>
         {status === 'ok' ? <Check className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" style={{ color: status === 'err' ? '#DC2626' : dragging ? '#722F37' : '#C7BFB8' }} />}
         {status === 'ok' ? 'Updated!' : status === 'err' ? 'Failed' : dragging ? 'Drop to upload' : label}
-      </button>
+      </div>
       {status === 'err' && <p className="text-[10px] text-red-500 leading-tight max-w-[180px]">{errMsg}</p>}
     </div>
   )
@@ -732,6 +743,385 @@ function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone, orgIc
   )
 }
 
+// ─── ICP Signal Table (member view) ───────────────────────────────────────────
+
+function ICPSignalTable({ signals, monthLabel: label }: { signals: ICPSignal[]; monthLabel: string }) {
+  const [showIcpOnly, setShowIcpOnly] = useState(false)
+  const sorted = useMemo(() =>
+    [...signals].sort((a, b) => (parseFlexDate(b.date)?.getTime() ?? 0) - (parseFlexDate(a.date)?.getTime() ?? 0))
+  , [signals])
+  const filtered = showIcpOnly ? sorted.filter(s => s.isIcp) : sorted
+  const icpCount = signals.filter(s => s.isIcp).length
+  const actionCounts: Record<string, number> = {}
+  signals.forEach(s => { actionCounts[s.action] = (actionCounts[s.action] || 0) + 1 })
+  const actionBreakdown = Object.entries(actionCounts).sort((a, b) => b[1] - a[1])
+
+  return (
+    <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-[#EEF1F5] flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">ICP Signals — {label}</p>
+          {icpCount > 0 && <p className="text-xs text-amber-600 mt-0.5">{icpCount} confirmed ICP match{icpCount > 1 ? 'es' : ''}</p>}
+        </div>
+        <div className="flex rounded-lg border border-[#E8ECF0] overflow-hidden text-xs">
+          <button onClick={() => setShowIcpOnly(false)} className="px-3 py-1.5 font-medium transition-colors" style={!showIcpOnly ? { backgroundColor: BRAND, color: 'white' } : { color: '#4A4A4A' }}>All</button>
+          <button onClick={() => setShowIcpOnly(true)} className="px-3 py-1.5 font-medium transition-colors border-l border-[#E8ECF0]" style={showIcpOnly ? { backgroundColor: BRAND, color: 'white' } : { color: '#4A4A4A' }}>ICP Only</button>
+        </div>
+      </div>
+      {filtered.length === 0 ? (
+        <p className="px-5 py-6 text-xs text-center text-[#6B6B6B]">No confirmed ICP signals this month.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><tr className="border-b border-[#FEFDFB]">
+              {['Date', 'Name', 'Company', 'Title', 'Action', 'ICP'].map(h => (
+                <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {filtered.map((s, i) => (
+                <tr key={i} className="border-b border-[#FEFDFB] hover:bg-[#FAF8F3] transition-colors last:border-0">
+                  <td className="px-4 py-2.5 text-[#6B6B6B] whitespace-nowrap">{s.date}</td>
+                  <td className="px-4 py-2.5 font-medium text-[#2D2D2D]">{s.name || '—'}</td>
+                  <td className="px-4 py-2.5 text-[#4A4A4A]">{s.company || '—'}</td>
+                  <td className="px-4 py-2.5 text-[#6B6B6B]">{s.title || '—'}</td>
+                  <td className="px-4 py-2.5 capitalize text-[#4A4A4A]">{s.action}</td>
+                  <td className="px-4 py-2.5">
+                    {s.isIcp
+                      ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">ICP</span>
+                      : <span className="text-[#D4D4D4]">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {actionBreakdown.length > 0 && (
+        <div className="px-5 py-4 border-t border-[#EEF1F5] bg-[#FAF8F3]">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-3">By Action</p>
+          <div className="space-y-2">
+            {actionBreakdown.map(([action, count]) => (
+              <div key={action} className="flex items-center gap-3">
+                <span className="text-xs text-[#4A4A4A] capitalize w-24 flex-shrink-0">{action}</span>
+                <div className="flex-1 h-1.5 bg-[#EEF1F5] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${(count / actionBreakdown[0][1]) * 100}%`, backgroundColor: BRAND }} />
+                </div>
+                <span className="text-xs font-medium text-[#2D2D2D] w-5 text-right flex-shrink-0">{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── ICP Overview (leaderboard section) ──────────────────────────────────────
+
+function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSignals: ICPSignal[] }) {
+  const combined = useMemo(() => allSignals(members, orgIcpSignals), [members, orgIcpSignals])
+  if (combined.length === 0) return null
+
+  const total = combined.length
+  const confirmed = combined.filter(s => s.isIcp).length
+  const matchRate = total > 0 ? (confirmed / total) * 100 : 0
+
+  const companyCounts = useMemo(() => {
+    const map: Record<string, { total: number; icp: number }> = {}
+    combined.forEach(s => {
+      if (!s.company) return
+      if (!map[s.company]) map[s.company] = { total: 0, icp: 0 }
+      map[s.company].total++
+      if (s.isIcp) map[s.company].icp++
+    })
+    return Object.entries(map).sort((a, b) => b[1].total - a[1].total)
+  }, [combined])
+
+  const trendData = useMemo(() => {
+    const byMonth: Record<string, { total: number; icp: number }> = {}
+    combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); if (!byMonth[mk]) byMonth[mk] = { total: 0, icp: 0 }; byMonth[mk].total++; if (s.isIcp) byMonth[mk].icp++ })
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-9).map(([date, v]) => ({ date, ...v }))
+  }, [combined])
+
+  const recentConfirmed = useMemo(() =>
+    combined.filter(s => s.isIcp).sort((a, b) => (parseFlexDate(b.date)?.getTime() ?? 0) - (parseFlexDate(a.date)?.getTime() ?? 0)).slice(0, 8)
+  , [combined])
+
+  const topCompany = companyCounts[0]?.[0] ?? null
+
+  return (
+    <div className="space-y-4 pt-5 border-t border-[#EEF1F5]">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">ICP Overview — All Time</p>
+      <div className="grid grid-cols-4 gap-4">
+        <StatCard label="Total Signals" value={fmtN(total)} sub="All sources combined" />
+        <StatCard label="Confirmed ICP" value={fmtN(confirmed)} sub={confirmed > 0 ? `${fmtPct(matchRate, 0)} match rate` : 'No confirmed matches yet'} />
+        <StatCard label="Match Rate" value={fmtPct(matchRate, 0)} sub={`${confirmed} of ${total} signals`} />
+        <StatCard label="Top Company" value={topCompany ? (topCompany.length > 14 ? topCompany.slice(0, 14) + '…' : topCompany) : '—'} sub={topCompany ? `${companyCounts[0][1].total} signals` : 'No company data'} />
+      </div>
+
+      {trendData.length > 1 && (
+        <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">ICP Signal Trend</p>
+          <ResponsiveContainer width="100%" height={140}>
+            <LineChart data={trendData}>
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] }} />
+              <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} width={28} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
+              <CartesianGrid vertical={false} stroke="#EEF1F5" />
+              <Line type="monotone" dataKey="total" stroke="#C7BFB8" strokeWidth={2} dot={false} name="All Signals" />
+              <Line type="monotone" dataKey="icp" stroke={BRAND} strokeWidth={2} dot={false} name="Confirmed ICP" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <div className={`grid gap-4 ${companyCounts.length > 0 && recentConfirmed.length > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        {companyCounts.length > 0 && (
+          <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Top Companies</p>
+            <div className="space-y-2.5">
+              {companyCounts.slice(0, 6).map(([company, { total: ct, icp: ci }]) => (
+                <div key={company}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-[#4A4A4A] truncate flex-1 mr-2">{company}</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="text-xs text-[#6B6B6B]">{ct}</span>
+                      {ci > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">{ci} ICP</span>}
+                    </div>
+                  </div>
+                  <div className="h-1 bg-[#EEF1F5] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${(ct / companyCounts[0][1].total) * 100}%`, backgroundColor: BRAND }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {recentConfirmed.length > 0 && (
+          <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-[#EEF1F5]">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">Recent Confirmed ICP</p>
+            </div>
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-[#FEFDFB]">
+                {['Date', 'Name', 'Company', 'Action', 'Via'].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {recentConfirmed.map((s, i) => (
+                  <tr key={i} className="border-b border-[#FEFDFB] hover:bg-[#FAF8F3] transition-colors last:border-0">
+                    <td className="px-4 py-2.5 text-[#6B6B6B] whitespace-nowrap">{s.date}</td>
+                    <td className="px-4 py-2.5 font-medium text-[#2D2D2D]">{s.name || '—'}</td>
+                    <td className="px-4 py-2.5 text-[#4A4A4A]">{s.company || '—'}</td>
+                    <td className="px-4 py-2.5 capitalize text-[#4A4A4A]">{s.action}</td>
+                    <td className="px-4 py-2.5 text-[#6B6B6B]">{s.via ?? 'Org'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── ICP Pipeline View (dedicated tab) ────────────────────────────────────────
+
+function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcpSignals: ICPSignal[] }) {
+  const combined = useMemo(() => allSignals(members, orgIcpSignals), [members, orgIcpSignals])
+  const [filter, setFilter] = useState<'all' | 'icp'>('all')
+  const [search, setSearch] = useState('')
+
+  const total = combined.length
+  const confirmed = combined.filter(s => s.isIcp).length
+  const matchRate = total > 0 ? (confirmed / total) * 100 : 0
+
+  const companyCounts = useMemo(() => {
+    const map: Record<string, { total: number; icp: number }> = {}
+    combined.forEach(s => {
+      if (!s.company) return
+      if (!map[s.company]) map[s.company] = { total: 0, icp: 0 }
+      map[s.company].total++
+      if (s.isIcp) map[s.company].icp++
+    })
+    return Object.entries(map).sort((a, b) => b[1].total - a[1].total)
+  }, [combined])
+
+  const trendData = useMemo(() => {
+    const byMonth: Record<string, { total: number; icp: number }> = {}
+    combined.forEach(s => { const d = parseFlexDate(s.date); if (!d) return; const mk = monthKey(d); if (!byMonth[mk]) byMonth[mk] = { total: 0, icp: 0 }; byMonth[mk].total++; if (s.isIcp) byMonth[mk].icp++ })
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([date, v]) => ({ date, ...v }))
+  }, [combined])
+
+  const actionBreakdown = useMemo(() => {
+    const map: Record<string, number> = {}
+    combined.forEach(s => { map[s.action] = (map[s.action] || 0) + 1 })
+    return Object.entries(map).sort((a, b) => b[1] - a[1])
+  }, [combined])
+
+  const memberAttribution = useMemo(() => {
+    const items = members.filter(m => m.icpSignals.length > 0).map(m => ({ name: m.name, count: m.icpSignals.length }))
+    if (orgIcpSignals.length > 0) items.push({ name: 'Org (unattributed)', count: orgIcpSignals.length })
+    return items.sort((a, b) => b.count - a.count)
+  }, [members, orgIcpSignals])
+
+  const tableSignals = useMemo(() => {
+    let sigs: TaggedSignal[] = filter === 'icp' ? combined.filter(s => s.isIcp) : combined
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      sigs = sigs.filter(s => (s.name ?? '').toLowerCase().includes(q) || (s.company ?? '').toLowerCase().includes(q))
+    }
+    return [...sigs].sort((a, b) => (parseFlexDate(b.date)?.getTime() ?? 0) - (parseFlexDate(a.date)?.getTime() ?? 0)).slice(0, 100)
+  }, [combined, filter, search])
+
+  if (combined.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="text-center">
+          <Zap className="w-8 h-8 mx-auto mb-3 text-[#D4D4D4]" />
+          <p className="text-sm font-medium text-[#2D2D2D] mb-1">No ICP signals yet</p>
+          <p className="text-xs text-[#6B6B6B]">Upload signals via Manage → team members or Org ICP Signals</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-4 gap-4">
+        <StatCard label="Total Signals" value={fmtN(total)} sub="All time · all sources" />
+        <StatCard label="Confirmed ICP" value={fmtN(confirmed)} sub={confirmed > 0 ? `${fmtPct(matchRate, 0)} of all signals` : 'No confirmed matches yet'} />
+        <StatCard label="Match Rate" value={fmtPct(matchRate, 0)} sub={`${confirmed} confirmed out of ${total}`} />
+        <StatCard label="Companies Reached" value={companyCounts.length.toString()} sub={companyCounts[0] ? `Top: ${companyCounts[0][0]}` : 'No company data'} />
+      </div>
+
+      {trendData.length > 1 && (
+        <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-1">Monthly Signal Trend</p>
+          <p className="text-xs text-[#6B6B6B] mb-4"><span style={{ color: '#C7BFB8' }}>●</span> All signals &nbsp; <span style={{ color: BRAND }}>●</span> Confirmed ICP</p>
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={trendData}>
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] }} />
+              <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} width={28} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
+              <CartesianGrid vertical={false} stroke="#EEF1F5" />
+              <Line type="monotone" dataKey="total" stroke="#C7BFB8" strokeWidth={2} dot={false} name="All Signals" />
+              <Line type="monotone" dataKey="icp" stroke={BRAND} strokeWidth={2} dot={false} name="Confirmed ICP" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-5">
+        {actionBreakdown.length > 0 && (
+          <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Signal Types</p>
+            <div className="space-y-3">
+              {actionBreakdown.slice(0, 7).map(([action, count]) => (
+                <div key={action}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-[#4A4A4A] capitalize">{action}</span>
+                    <span className="text-xs font-semibold text-[#2D2D2D]">{count}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#EEF1F5] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${(count / actionBreakdown[0][1]) * 100}%`, backgroundColor: BRAND }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {memberAttribution.length > 0 && (
+          <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Attribution</p>
+            <div className="space-y-3">
+              {memberAttribution.map(({ name, count }) => (
+                <div key={name}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-[#4A4A4A] truncate max-w-[130px]">{name}</span>
+                    <span className="text-xs font-semibold text-[#2D2D2D]">{count}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#EEF1F5] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bg-[#C7BFB8]" style={{ width: `${(count / memberAttribution[0].count) * 100}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {companyCounts.length > 0 && (
+          <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Top Companies</p>
+            <div className="space-y-3">
+              {companyCounts.slice(0, 7).map(([company, { total: ct, icp: ci }]) => (
+                <div key={company} className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-[#4A4A4A] truncate flex-1">{company}</span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="text-xs text-[#6B6B6B]">{ct}</span>
+                    {ci > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">{ci} ICP</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#EEF1F5] flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">Signal Feed ({tableSignals.length})</p>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-[#E8ECF0] overflow-hidden text-xs">
+              <button onClick={() => setFilter('all')} className="px-3 py-1.5 font-medium transition-colors" style={filter === 'all' ? { backgroundColor: BRAND, color: 'white' } : { color: '#4A4A4A' }}>All</button>
+              <button onClick={() => setFilter('icp')} className="px-3 py-1.5 font-medium transition-colors border-l border-[#E8ECF0]" style={filter === 'icp' ? { backgroundColor: BRAND, color: 'white' } : { color: '#4A4A4A' }}>ICP Only</button>
+            </div>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name / company…"
+              className="bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-xs rounded-lg px-3 py-1.5 outline-none w-44 placeholder:text-[#D4D4D4]" />
+          </div>
+        </div>
+        {tableSignals.length === 0 ? (
+          <div className="px-5 py-8 text-center text-xs text-[#6B6B6B]">No signals match your filter.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#FEFDFB]">
+                  {['Date', 'Name', 'Company', 'Title', 'Action', 'ICP', 'Via'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tableSignals.map((s, i) => (
+                  <tr key={i} className="border-b border-[#FEFDFB] hover:bg-[#FAF8F3] transition-colors last:border-0">
+                    <td className="px-4 py-3 text-xs text-[#6B6B6B] whitespace-nowrap">{s.date}</td>
+                    <td className="px-4 py-3 text-xs font-medium text-[#2D2D2D]">{s.name || '—'}</td>
+                    <td className="px-4 py-3 text-xs text-[#4A4A4A]">{s.company || '—'}</td>
+                    <td className="px-4 py-3 text-xs text-[#6B6B6B]">{s.title || '—'}</td>
+                    <td className="px-4 py-3 text-xs text-[#4A4A4A] capitalize">{s.action}</td>
+                    <td className="px-4 py-3">
+                      {s.isIcp
+                        ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">ICP</span>
+                        : <span className="text-xs text-[#D4D4D4]">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-[#6B6B6B]">{s.via ?? 'Org'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Leaderboard ──────────────────────────────────────────────────────────────
 
 function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: Member[]; selectedMonth: string; orgIcpSignals?: ICPSignal[] }) {
@@ -835,6 +1225,7 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
           <span className="text-[10px] text-[#D4D4D4]"><span className="text-amber-500">●</span> Top 50% = {fmtN(BENCHMARKS.medianPerPost)}/post</span>
         </div>
       </div>
+      <ICPOverview members={members} orgIcpSignals={orgIcpSignals ?? []} />
     </div>
   )
 }
@@ -1054,23 +1445,8 @@ function MemberView({ member, goals, onGoalsChange }: {
         </div>
       )}
 
-      {hasIcp && icpByAction.length > 0 && (
-        <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-3">ICP Signal Breakdown — {monthLabel(selectedMonth)}</p>
-          <div className="space-y-2">
-            {icpByAction.map(([action, count]) => (
-              <div key={action} className="flex items-center justify-between">
-                <span className="text-sm text-[#4A4A4A] capitalize">{action}</span>
-                <div className="flex items-center gap-2">
-                  <div className="w-24 h-1.5 bg-[#EEF1F5] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${(count / icpByAction[0][1]) * 100}%`, backgroundColor: BRAND }} />
-                  </div>
-                  <span className="text-sm font-medium text-[#2D2D2D] w-6 text-right">{count}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      {hasIcp && icpMonth.length > 0 && (
+        <ICPSignalTable signals={icpMonth} monthLabel={monthLabel(selectedMonth)} />
       )}
     </div>
   )
@@ -1202,6 +1578,7 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
         <nav className="flex-1 overflow-y-auto px-3 py-3">
           <SectionLabel>Navigation</SectionLabel>
           <NavItem label="Team" active={activeTab === 'leaderboard'} onClick={() => setActiveTab('leaderboard')} icon={<Users className="w-4 h-4" />} />
+          <NavItem label="ICP Pipeline" active={activeTab === 'icp'} onClick={() => setActiveTab('icp')} icon={<Zap className="w-4 h-4" />} />
           {members.length > 0 && (
             <>
               <SectionLabel>Members</SectionLabel>
@@ -1241,6 +1618,11 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
                 </div>
               )}
             </div>
+          ) : activeTab === 'icp' ? (
+            <div className="mb-6">
+              <h1 className="text-2xl font-semibold text-[#2D2D2D]">ICP Pipeline</h1>
+              <p className="text-sm text-[#6B6B6B] mt-0.5">Signal tracking across all sources</p>
+            </div>
           ) : activeMember ? (
             <div className="mb-6">
               <h1 className="text-2xl font-semibold text-[#2D2D2D]">{activeMember.name}</h1>
@@ -1250,6 +1632,8 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
 
           {activeTab === 'leaderboard'
             ? <LeaderboardView members={members} selectedMonth={selectedMonth} orgIcpSignals={orgIcpSignals} />
+            : activeTab === 'icp'
+            ? <ICPPipelineView members={members} orgIcpSignals={orgIcpSignals} />
             : activeMember
             ? <MemberView member={activeMember} goals={goals[activeMember.id] ?? DEFAULT_GOALS}
                 onGoalsChange={g => {
