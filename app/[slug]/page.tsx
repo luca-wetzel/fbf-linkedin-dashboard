@@ -1115,6 +1115,16 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
   const hasIcp = rows.some(r => r.icpTotal > 0) || orgIcpFiltered.length > 0
   const periodLabel = isAllTime ? 'All Time' : monthLabel(selectedMonth)
 
+  const impressionsTrend = useMemo(() => {
+    const byMonth: Record<string, number> = {}
+    members.forEach(m => m.posts.forEach(p => {
+      const d = parseFlexDate(p.date); if (!d) return
+      const mk = monthKey(d)
+      byMonth[mk] = (byMonth[mk] || 0) + p.impressions
+    }))
+    return Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([date, impressions]) => ({ date, impressions }))
+  }, [members])
+
   return (
     <div className="space-y-5">
       <div className={`grid grid-cols-2 gap-4 ${hasIcp ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
@@ -1123,6 +1133,22 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
         <StatCard label="Follower Growth" value={`+${fmtN(totalFollowers)}`} sub={periodLabel} />
         {hasIcp && <StatCard label="ICP Signals" value={fmtN(totalIcp)} sub={unattributedIcp > 0 ? `incl. ${unattributedIcp} unattributed` : `Total signals · ${periodLabel}`} />}
       </div>
+
+      {impressionsTrend.length > 1 && (
+        <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Impressions Trend</p>
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={impressionsTrend}>
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] }} />
+              <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={fmtN} width={36} />
+              <Tooltip formatter={(v: number) => [fmtN(v), 'Impressions']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
+              <CartesianGrid vertical={false} stroke="#EEF1F5" />
+              <Line type="monotone" dataKey="impressions" stroke={BRAND} strokeWidth={2} dot={false} name="Impressions" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
       <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-[#EEF1F5]">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">Leaderboard — {periodLabel}</p>
