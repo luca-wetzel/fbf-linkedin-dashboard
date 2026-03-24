@@ -434,13 +434,16 @@ function UploadCard({ type, label, hint, loaded, onFile }: {
 
 type NewMemberData = { name: string; role: string; posts: Post[]; icpSignals: ICPSignal[]; followerHistory: FollowerEntry[] }
 
-function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone }: {
+function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone, orgIcpSignals, onOrgIcpUpload, onOrgIcpClear }: {
   members: Member[]
   orgName: string
   onUpdate: (id: string, patch: Partial<Pick<Member, 'name' | 'role' | 'posts' | 'icpSignals' | 'followerHistory'>>) => void
   onDelete: (id: string) => void
   onAdd: (data: NewMemberData) => Promise<void>
   onDone: () => void
+  orgIcpSignals: ICPSignal[]
+  onOrgIcpUpload: (signals: ICPSignal[]) => Promise<void>
+  onOrgIcpClear: () => Promise<void>
 }) {
   const [showAddForm, setShowAddForm] = useState(members.length === 0)
   const [newName, setNewName] = useState('')
@@ -667,6 +670,34 @@ function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone }: {
           </div>
         )}
 
+        <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">Org ICP Signals</p>
+              <p className="text-xs text-[#6B6B6B] mt-0.5">Not attributed to a specific member</p>
+            </div>
+            {orgIcpSignals.length > 0 && (
+              <button onClick={() => onOrgIcpClear()}
+                className="text-xs text-red-400 hover:text-red-600 transition-colors">Clear</button>
+            )}
+          </div>
+          {orgIcpSignals.length > 0 && (
+            <p className="text-xs text-[#6B6B6B] mb-3 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block flex-shrink-0" />
+              {orgIcpSignals.length} signals · {orgIcpSignals.filter(s => s.isIcp).length} confirmed ICP
+            </p>
+          )}
+          <MiniDropZone
+            label={orgIcpSignals.length > 0 ? 'Replace Org ICP Signals' : 'Upload Org ICP Signals'}
+            onFile={(f, cb) => {
+              readFileText(f).then(text => {
+                const signals = parseICPSignalsCSV(text)
+                onOrgIcpUpload(signals).then(() => cb(true)).catch(err => cb(false, (err as Error).message))
+              }).catch(err => cb(false, (err as Error).message))
+            }}
+          />
+        </div>
+
         {members.length > 0 && (
           <button onClick={onDone} className="w-full py-3 rounded-xl text-sm font-medium border border-[#E8ECF0] text-[#4A4A4A] hover:bg-white transition-colors">
             Done — Back to Dashboard
@@ -679,7 +710,7 @@ function ManageView({ members, orgName, onUpdate, onDelete, onAdd, onDone }: {
 
 // ─── Leaderboard ──────────────────────────────────────────────────────────────
 
-function LeaderboardView({ members, selectedMonth }: { members: Member[]; selectedMonth: string }) {
+function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: Member[]; selectedMonth: string; orgIcpSignals?: ICPSignal[] }) {
   const rows = useMemo(() => {
     return members.map(m => {
       const mp = postsForMonth(m.posts, selectedMonth)
@@ -697,9 +728,10 @@ function LeaderboardView({ members, selectedMonth }: { members: Member[]; select
   const totalImpressions = rows.reduce((s, r) => s + r.impressions, 0)
   const totalPosts = rows.reduce((s, r) => s + r.postCount, 0)
   const totalFollowers = rows.reduce((s, r) => s + r.followers, 0)
-  const totalIcp = rows.reduce((s, r) => s + r.icpTotal, 0)
+  const orgIcpMonth = orgIcpSignals ? icpForMonth(orgIcpSignals, selectedMonth) : []
+  const totalIcp = rows.reduce((s, r) => s + r.icpTotal, 0) + orgIcpMonth.length
   const maxImpressions = Math.max(...rows.map(r => r.impressions), 1)
-  const hasIcp = rows.some(r => r.icpTotal > 0)
+  const hasIcp = rows.some(r => r.icpTotal > 0) || orgIcpMonth.length > 0
 
   return (
     <div className="space-y-5">
@@ -707,7 +739,7 @@ function LeaderboardView({ members, selectedMonth }: { members: Member[]; select
         <StatCard label="Team Impressions" value={fmtN(totalImpressions)} sub={`${members.length} members · ${monthLabel(selectedMonth)}`} />
         <StatCard label="Posts Published" value={totalPosts.toString()} sub={`${fmtN(totalImpressions / Math.max(totalPosts, 1))} avg impressions / post`} />
         <StatCard label="Follower Growth" value={`+${fmtN(totalFollowers)}`} sub={monthLabel(selectedMonth)} />
-        {hasIcp && <StatCard label="ICP Signals" value={fmtN(totalIcp)} sub="Total LinkedIn signals this month" />}
+        {hasIcp && <StatCard label="ICP Signals" value={fmtN(totalIcp)} sub={orgIcpMonth.length > 0 && rows.every(r => r.icpTotal === 0) ? `${orgIcpMonth.length} unattributed` : orgIcpMonth.length > 0 ? `incl. ${orgIcpMonth.length} unattributed` : 'Total LinkedIn signals this month'} />}
       </div>
       <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-[#EEF1F5]">
@@ -1032,6 +1064,7 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
   const [activeTab, setActiveTab] = useState<string>('leaderboard')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [orgIcpSignals, setOrgIcpSignals] = useState<ICPSignal[]>([])
 
   useEffect(() => {
     fetch(`/api/org/${slug}`)
@@ -1041,6 +1074,7 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
         setOrgName(data.org?.name ?? slug)
         setMembers(data.members ?? [])
         setGoals(data.goals ?? {})
+        setOrgIcpSignals(data.orgIcpSignals ?? [])
         if ((data.members ?? []).length > 0) { setView('dashboard'); setActiveTab('leaderboard') }
       })
       .catch(() => setError('Failed to load dashboard'))
@@ -1073,6 +1107,20 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
       return updated
     })
     fetch(`/api/org/${slug}/members/${id}`, { method: 'DELETE' }).catch(console.error)
+  }
+
+  async function handleOrgIcpUpload(signals: ICPSignal[]) {
+    setOrgIcpSignals(signals)
+    await fetch(`/api/org/${slug}/org-icp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signals }),
+    })
+  }
+
+  async function handleOrgIcpClear() {
+    setOrgIcpSignals([])
+    await fetch(`/api/org/${slug}/org-icp`, { method: 'DELETE' })
   }
 
   async function handleAdd(data: NewMemberData) {
@@ -1114,7 +1162,8 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
 
   if (view === 'manage') {
     return <ManageView members={members} orgName={orgName} onUpdate={handleUpdate} onDelete={handleDelete} onAdd={handleAdd}
-      onDone={() => { if (members.length > 0) setView('dashboard') }} />
+      onDone={() => { if (members.length > 0) setView('dashboard') }}
+      orgIcpSignals={orgIcpSignals} onOrgIcpUpload={handleOrgIcpUpload} onOrgIcpClear={handleOrgIcpClear} />
   }
 
   const activeMember = members.find(m => m.id === activeTab) ?? null
@@ -1176,7 +1225,7 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
           ) : null}
 
           {activeTab === 'leaderboard'
-            ? <LeaderboardView members={members} selectedMonth={selectedMonth} />
+            ? <LeaderboardView members={members} selectedMonth={selectedMonth} orgIcpSignals={orgIcpSignals} />
             : activeMember
             ? <MemberView member={activeMember} goals={goals[activeMember.id] ?? DEFAULT_GOALS}
                 onGoalsChange={g => {

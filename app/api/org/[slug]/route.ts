@@ -18,8 +18,18 @@ export async function GET(_req: NextRequest, { params }: { params: { slug: strin
     .eq('org_id', org.id)
     .order('added_at')
 
+  const { data: orgIcpData } = await getSupabase()
+    .from('li_org_icp_signals')
+    .select('*')
+    .eq('org_id', org.id)
+
+  const orgIcpSignals = (orgIcpData ?? []).map(s => ({
+    date: s.date, name: s.name, company: s.company, title: s.title,
+    action: s.action, source: s.source, isIcp: s.is_icp,
+  }))
+
   if (!members || members.length === 0) {
-    return NextResponse.json({ org, members: [], goals: {} })
+    return NextResponse.json({ org, members: [], goals: {}, orgIcpSignals })
   }
 
   const memberIds = members.map(m => m.id)
@@ -65,5 +75,5 @@ export async function GET(_req: NextRequest, { params }: { params: { slug: strin
     })),
   }))
 
-  return NextResponse.json({ org, members: fullMembers, goals })
+  return NextResponse.json({ org, members: fullMembers, goals, orgIcpSignals })
 }
