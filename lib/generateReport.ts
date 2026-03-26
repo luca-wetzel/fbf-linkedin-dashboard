@@ -344,9 +344,10 @@ async function buildPage1(
     y += 5
 
     const maxVal = Math.max(...trendReversed.map(d => d.imp))
-    const barStartX = 46
-    const valueX = PW - 14 // fixed right-align for all values
-    const barMax = valueX - barStartX - 16 // leave room for value text
+    const labelX = 14
+    const barStartX = 52 // more room for month labels
+    const valueX = PW - 14
+    const barMax = valueX - barStartX - 16
     const barH = 6
     const rowH = barH + 3
 
@@ -360,7 +361,7 @@ async function buildPage1(
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
       doc.setTextColor(...MID)
-      doc.text(monthLabel(pt.date), barStartX - 4, y + 4.5, { align: 'right' })
+      doc.text(monthLabel(pt.date), labelX, y + 4.5)
       if (bw > 0.5) {
         doc.setFillColor(...BRAND)
         doc.roundedRect(barStartX, y, bw, barH, 1.5, 1.5, 'F')
