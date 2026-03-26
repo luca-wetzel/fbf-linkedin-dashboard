@@ -1207,7 +1207,8 @@ function ICPSignalTable({ signals, monthLabel: label }: { signals: ICPSignal[]; 
 
 // ─── ICP Overview (leaderboard section) ──────────────────────────────────────
 
-function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSignals: ICPSignal[] }) {
+function ICPOverview({ members, orgIcpSignals, selectedMonth }: { members: Member[]; orgIcpSignals: ICPSignal[]; selectedMonth: string }) {
+  const isAllTime = selectedMonth === 'all'
   const combined = useMemo(() => allSignals(members, orgIcpSignals), [members, orgIcpSignals])
   if (combined.length === 0) return null
 
@@ -1229,7 +1230,7 @@ function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSign
 
   return (
     <div className="space-y-4 pt-5 border-t border-[#EEF1F5]">
-      <h2 className="text-lg font-semibold text-[#2D2D2D]">ICP Overview — All Time</h2>
+      <h2 className="text-lg font-semibold text-[#2D2D2D]">ICP Overview — {isAllTime ? 'All Time' : monthLabel(selectedMonth)}</h2>
       <div className="grid grid-cols-2 gap-4">
         <StatCard label="Total ICP Signals" value={fmtN(total)} sub="All sources combined" />
         <StatCard label="Top Company" value={topCompany ?? '—'} sub={topCompany ? `${companyCounts[0][1]} signals` : 'No company data'} />
@@ -1237,16 +1238,49 @@ function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSign
 
       {trendData.length > 1 && (
         <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">ICP Signal Trend</p>
-          <ResponsiveContainer width="100%" height={140}>
-            <LineChart data={trendData}>
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [y, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] + ' \'' + y.slice(2) }} />
-              <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} width={28} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
-              <CartesianGrid vertical={false} stroke="#EEF1F5" />
-              <Line type="monotone" dataKey="total" stroke={BRAND} strokeWidth={2} dot={false} name="ICP Signals" />
-            </LineChart>
-          </ResponsiveContainer>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">
+            {isAllTime ? 'ICP Signal Trend' : `ICP Signals — ${monthLabel(selectedMonth)} vs Previous`}
+          </p>
+          {isAllTime ? (
+            <ResponsiveContainer width="100%" height={140}>
+              <LineChart data={trendData}>
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [y, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] + ' \'' + y.slice(2) }} />
+                <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} width={28} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
+                <CartesianGrid vertical={false} stroke="#EEF1F5" />
+                <Line type="monotone" dataKey="total" stroke={BRAND} strokeWidth={2} dot={false} name="ICP Signals" />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (() => {
+            const allMonthsSorted = trendData.map(d => d.date).sort().reverse()
+            const selIdx = allMonthsSorted.indexOf(selectedMonth)
+            const monthsToShow = selIdx >= 0
+              ? [selectedMonth, ...allMonthsSorted.slice(selIdx + 1, selIdx + 3)]
+              : [selectedMonth]
+            const barData = monthsToShow.map(mk => ({
+              month: mk,
+              signals: trendData.find(d => d.date === mk)?.total ?? 0,
+            }))
+            const maxVal = Math.max(...barData.map(d => d.signals), 1)
+            return (
+              <div className="space-y-3">
+                {barData.map((d, i) => (
+                  <div key={d.month}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-[#4A4A4A]">{monthLabel(d.month)}</span>
+                      <span className={`text-xs font-semibold ${i === 0 ? 'text-[#2D2D2D]' : 'text-[#A8A29E]'}`}>{d.signals} signals</span>
+                    </div>
+                    <div className="h-2.5 bg-[#EEF1F5] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{
+                        width: `${(d.signals / maxVal) * 100}%`,
+                        backgroundColor: i === 0 ? BRAND : '#C7BFB8',
+                      }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -1552,16 +1586,50 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
 
       {impressionsTrend.length > 1 && (
         <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">Impressions Trend</p>
-          <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={impressionsTrend}>
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [y, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] + ' \'' + y.slice(2) }} />
-              <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={fmtN} width={36} />
-              <Tooltip formatter={(v: number) => [fmtN(v), 'Impressions']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
-              <CartesianGrid vertical={false} stroke="#EEF1F5" />
-              <Line type="monotone" dataKey="impressions" stroke={BRAND} strokeWidth={2} dot={false} name="Impressions" />
-            </LineChart>
-          </ResponsiveContainer>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-4">
+            {isAllTime ? 'Impressions Trend' : `Impressions — ${periodLabel} vs Previous`}
+          </p>
+          {isAllTime ? (
+            <ResponsiveContainer width="100%" height={160}>
+              <LineChart data={impressionsTrend}>
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={k => { const [y, m] = k.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1] + ' \'' + y.slice(2) }} />
+                <YAxis tick={{ fontSize: 10, fill: '#A8A29E' }} axisLine={false} tickLine={false} tickFormatter={fmtN} width={36} />
+                <Tooltip formatter={(v: number) => [fmtN(v), 'Impressions']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8ECF0' }} />
+                <CartesianGrid vertical={false} stroke="#EEF1F5" />
+                <Line type="monotone" dataKey="impressions" stroke={BRAND} strokeWidth={2} dot={false} name="Impressions" />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (() => {
+            // Show selected month + 2 prior months as horizontal bars
+            const allMonthsSorted = impressionsTrend.map(d => d.date).sort().reverse()
+            const selIdx = allMonthsSorted.indexOf(selectedMonth)
+            const monthsToShow = selIdx >= 0
+              ? [selectedMonth, ...allMonthsSorted.slice(selIdx + 1, selIdx + 3)]
+              : [selectedMonth]
+            const barData = monthsToShow.map(mk => ({
+              month: mk,
+              impressions: impressionsTrend.find(d => d.date === mk)?.impressions ?? 0,
+            }))
+            const maxVal = Math.max(...barData.map(d => d.impressions), 1)
+            return (
+              <div className="space-y-3">
+                {barData.map((d, i) => (
+                  <div key={d.month}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-[#4A4A4A]">{monthLabel(d.month)}</span>
+                      <span className={`text-xs font-semibold ${i === 0 ? 'text-[#2D2D2D]' : 'text-[#A8A29E]'}`}>{fmtN(d.impressions)} impressions</span>
+                    </div>
+                    <div className="h-2.5 bg-[#EEF1F5] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{
+                        width: `${(d.impressions / maxVal) * 100}%`,
+                        backgroundColor: i === 0 ? BRAND : '#C7BFB8',
+                      }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -1632,7 +1700,7 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
           <span className="text-[10px] text-[#D4D4D4]"><span className="text-amber-500">●</span> Top 50% = {fmtN(BENCHMARKS.medianPerPost)}/post</span>
         </div>
       </div>
-      <ICPOverview members={members} orgIcpSignals={orgIcpSignals ?? []} />
+      <ICPOverview members={members} orgIcpSignals={orgIcpSignals ?? []} selectedMonth={selectedMonth} />
     </div>
   )
 }
