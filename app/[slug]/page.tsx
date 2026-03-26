@@ -1209,8 +1209,12 @@ function ICPSignalTable({ signals, monthLabel: label }: { signals: ICPSignal[]; 
 
 function ICPOverview({ members, orgIcpSignals, selectedMonth }: { members: Member[]; orgIcpSignals: ICPSignal[]; selectedMonth: string }) {
   const isAllTime = selectedMonth === 'all'
-  const combined = useMemo(() => allSignals(members, orgIcpSignals), [members, orgIcpSignals])
-  if (combined.length === 0) return null
+  const combinedAll = useMemo(() => allSignals(members, orgIcpSignals), [members, orgIcpSignals])
+  const combined = useMemo(() => {
+    if (isAllTime) return combinedAll
+    return combinedAll.filter(s => { const d = parseFlexDate(s.date); return d ? monthKey(d) === selectedMonth : false })
+  }, [combinedAll, selectedMonth, isAllTime])
+  if (combinedAll.length === 0) return null
 
   const total = combined.length
 
@@ -1382,6 +1386,7 @@ function ICPOverview({ members, orgIcpSignals, selectedMonth }: { members: Membe
 function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcpSignals: ICPSignal[] }) {
   const combined = useMemo(() => allSignals(members, orgIcpSignals), [members, orgIcpSignals])
   const [search, setSearch] = useState('')
+  const [memberFilter, setMemberFilter] = useState('')
 
   const total = combined.length
 
@@ -1405,11 +1410,11 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
 
   const searchResults = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return []
-    return [...combined]
-      .filter(s => (s.name ?? '').toLowerCase().includes(q) || (s.company ?? '').toLowerCase().includes(q))
-      .sort((a, b) => (parseFlexDate(b.date)?.getTime() ?? 0) - (parseFlexDate(a.date)?.getTime() ?? 0))
-  }, [combined, search])
+    let filtered = [...combined]
+    if (memberFilter) filtered = filtered.filter(s => s.via === memberFilter)
+    if (q) filtered = filtered.filter(s => (s.name ?? '').toLowerCase().includes(q) || (s.company ?? '').toLowerCase().includes(q))
+    return filtered.sort((a, b) => (parseFlexDate(b.date)?.getTime() ?? 0) - (parseFlexDate(a.date)?.getTime() ?? 0))
+  }, [combined, search, memberFilter])
 
   if (combined.length === 0) {
     return (
@@ -1486,36 +1491,40 @@ function ICPPipelineView({ members, orgIcpSignals }: { members: Member[]; orgIcp
       </div>
 
       <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#EEF1F5] flex items-center gap-3">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] flex-shrink-0">Search Signals</p>
+        <div className="px-5 py-4 border-b border-[#EEF1F5] flex flex-wrap items-center gap-3">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] flex-shrink-0">Signals</p>
+          <select value={memberFilter} onChange={e => setMemberFilter(e.target.value)}
+            className="bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-xs rounded-lg px-2.5 py-1.5 outline-none">
+            <option value="">All Members</option>
+            {members.map(m => <option key={m.id} value={m.name}>{m.name.split(' ')[0]}</option>)}
+          </select>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or company…"
             className="bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-xs rounded-lg px-3 py-1.5 outline-none flex-1 placeholder:text-[#D4D4D4]" />
+          <span className="text-xs text-[#6B6B6B]">{searchResults.length} of {total}</span>
         </div>
-        {!search.trim() ? (
-          <div className="px-5 py-8 text-center text-xs text-[#6B6B6B]">{total} signals total — type a name or company to search</div>
-        ) : searchResults.length === 0 ? (
-          <div className="px-5 py-8 text-center text-xs text-[#6B6B6B]">No signals found for &ldquo;{search}&rdquo;</div>
+        {searchResults.length === 0 ? (
+          <div className="px-5 py-8 text-center text-xs text-[#6B6B6B]">No signals found{search ? ` for "${search}"` : ''}</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
             <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-[#FEFDFB]">
-                  {['Date', 'Name', 'Company', 'Title', 'Action', 'LinkedIn'].map(h => (
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b border-[#EEF1F5]">
+                  {['Name', 'Company', 'Title', 'Action', 'Source', 'LinkedIn'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {searchResults.map((s, i) => (
+                {searchResults.slice(0, 100).map((s, i) => (
                   <tr key={i} className="border-b border-[#FEFDFB] hover:bg-[#FAF8F3] transition-colors last:border-0">
-                    <td className="px-4 py-3 text-[#6B6B6B] whitespace-nowrap">{s.date}</td>
                     <td className="px-4 py-3 font-medium text-[#2D2D2D]">{s.name || '—'}</td>
                     <td className="px-4 py-3 text-[#4A4A4A]">{s.company || '—'}</td>
                     <td className="px-4 py-3 text-[#6B6B6B]">{s.title || '—'}</td>
                     <td className="px-4 py-3 capitalize text-[#4A4A4A]">{s.action}</td>
+                    <td className="px-4 py-3 text-[#6B6B6B]">{s.via || '—'}</td>
                     <td className="px-4 py-3">
                       {s.source
-                        ? <a href={s.source} target="_blank" rel="noopener noreferrer" className="text-[#722F37] underline underline-offset-2 hover:opacity-70 transition-opacity">View</a>
+                        ? <a href={s.source} target="_blank" rel="noopener noreferrer" className="hover:opacity-70 transition-opacity" style={{ color: BRAND }}>View ↗</a>
                         : <span className="text-[#D4D4D4]">—</span>}
                     </td>
                   </tr>
@@ -1840,16 +1849,20 @@ function MemberView({ member, goals, onGoalsChange }: {
                       )}
                       <span className="text-xs font-semibold text-[#2D2D2D]">{fmtN(p.impressions)} impressions</span>
                     </div>
-                    <div className="h-2.5 bg-[#EEF1F5] rounded-full overflow-hidden relative">
+                    <div className="h-3 bg-[#EEF1F5] rounded-full overflow-hidden relative">
                       <div className="h-full rounded-full" style={{ width: `${(p.impressions / max) * 100}%`, backgroundColor: BRAND }} />
                       {BENCHMARKS.top25PerPost <= max && (
-                        <div className="absolute top-0 bottom-0 w-px bg-green-500 opacity-50" style={{ left: `${(BENCHMARKS.top25PerPost / max) * 100}%` }} />
+                        <div className="absolute top-0 bottom-0 w-[2px] bg-green-600 opacity-80 cursor-help" style={{ left: `${(BENCHMARKS.top25PerPost / max) * 100}%` }} title={`Top 25%: ${fmtN(BENCHMARKS.top25PerPost)} impressions/post`} />
+                      )}
+                      {BENCHMARKS.top10PerPost <= max && (
+                        <div className="absolute top-0 bottom-0 w-[2px] opacity-70 cursor-help" style={{ left: `${(BENCHMARKS.top10PerPost / max) * 100}%`, backgroundColor: BRAND }} title={`Top 10%: ${fmtN(BENCHMARKS.top10PerPost)} impressions/post`} />
                       )}
                     </div>
                   </div>
                 ))}
-                <div className="flex items-center gap-4 pt-1">
-                  <span className="flex items-center gap-1.5 text-[10px] text-[#A8A29E]"><span className="w-2 h-px bg-green-500 inline-block" /> Top 25%: {fmtN(BENCHMARKS.top25PerPost)}</span>
+                <div className="flex items-center gap-5 pt-2">
+                  <span className="flex items-center gap-1.5 text-xs text-green-700"><span className="w-3 h-[2px] bg-green-600 inline-block rounded-full" /> Top 25%: {fmtN(BENCHMARKS.top25PerPost)}</span>
+                  <span className="flex items-center gap-1.5 text-xs" style={{ color: BRAND }}><span className="w-3 h-[2px] inline-block rounded-full" style={{ backgroundColor: BRAND }} /> Top 10%: {fmtN(BENCHMARKS.top10PerPost)}</span>
                 </div>
               </div>
             )
@@ -1905,29 +1918,79 @@ function MemberView({ member, goals, onGoalsChange }: {
         )}
       </div>
 
-      {topPost && (
-        <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-3">Top Post — {monthLabel(selectedMonth)}</p>
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: BRAND_LIGHT }}>
-              <Star className="w-4 h-4" style={{ color: BRAND }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap gap-4 mb-2">
-                <span className="text-sm"><span className="font-semibold text-[#2D2D2D]">{fmtN(topPost.impressions)}</span> <span className="text-[#6B6B6B] text-xs">impressions</span></span>
-                {topPost.engagements > 0 && <span className="text-sm"><span className="font-semibold text-[#2D2D2D]">{fmtN(topPost.engagements)}</span> <span className="text-[#6B6B6B] text-xs">engagements</span></span>}
-                <span className="text-sm text-[#6B6B6B] text-xs">{topPost.date}</span>
-              </div>
-              {topPost.url && (
-                <a href={topPost.url} target="_blank" rel="noopener noreferrer"
-                  className="text-xs truncate block max-w-xs hover:underline" style={{ color: BRAND }}>
-                  {topPost.url.replace('https://www.linkedin.com', '').substring(0, 60)}…
-                </a>
-              )}
+      {mp.length > 0 && (() => {
+        const topPosts = [...mp].sort((a, b) => b.impressions - a.impressions).slice(0, 3)
+        return (
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-3">Top Posts</p>
+            <div className="space-y-3">
+              {topPosts.map((post, idx) => {
+                const postTier = tier(post.impressions)
+                return (
+                  <div key={idx} className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+                    <div className="flex items-start justify-between mb-3">
+                      <span className="text-2xl font-bold" style={{ color: BRAND_LIGHT }}>#{idx + 1}</span>
+                      <div className="text-right">
+                        <span className="text-xl font-bold text-[#2D2D2D]">{fmtN(post.impressions)}</span>
+                        <p className="text-[10px] uppercase tracking-widest text-[#6B6B6B]">Impressions</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-xs text-[#6B6B6B]">{post.date}</span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{
+                        backgroundColor: postTier.label.includes('10') ? BRAND_LIGHT : postTier.label.includes('25') ? '#F0FDF4' : '#FEF9F0',
+                        color: postTier.label.includes('10') ? BRAND : postTier.label.includes('25') ? '#16A34A' : '#D97706',
+                      }}>{postTier.label}</span>
+                    </div>
+                    <div className="border-t border-[#EEF1F5] pt-3 flex items-center justify-between">
+                      <div className="flex items-center gap-6">
+                        {post.engagements > 0 && (
+                          <div><span className="font-semibold text-sm text-[#2D2D2D]">{post.engagements}</span><span className="text-[10px] uppercase tracking-widest text-[#6B6B6B] ml-1.5">Engagements</span></div>
+                        )}
+                        {post.engagementRate > 0 && (
+                          <div><span className="font-semibold text-sm text-[#2D2D2D]">{fmtPct(post.engagementRate)}</span><span className="text-[10px] uppercase tracking-widest text-[#6B6B6B] ml-1.5">ER</span></div>
+                        )}
+                      </div>
+                      {post.url && (
+                        <a href={post.url} target="_blank" rel="noopener noreferrer" className="text-xs hover:underline" style={{ color: BRAND }}>View ↗</a>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
+
+      {mp.length > 0 && (() => {
+        const dates = mp.map(p => parseFlexDate(p.date)).filter(Boolean).sort((a, b) => a!.getTime() - b!.getTime())
+        const firstDate = dates[0]; const lastDate = dates[dates.length - 1]
+        const medianImp = [...mp].sort((a, b) => a.impressions - b.impressions)[Math.floor(mp.length / 2)]?.impressions ?? 0
+        const aboveBenchmark = mp.filter(p => p.impressions >= BENCHMARKS.top25PerPost).length
+        const aboveTop10 = mp.filter(p => p.impressions >= BENCHMARKS.top10PerPost).length
+        const metrics: string[] = []
+        if (firstDate && lastDate) metrics.push(`${mp.length} posts published between ${firstDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} and ${lastDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`)
+        metrics.push(`Total reach: ${fmtN(totalImpressions)} impressions at a median of ${fmtN(medianImp)} per post${medianImp >= BENCHMARKS.top25PerPost ? ' — above the top 25% benchmark' : medianImp >= BENCHMARKS.medianPerPost ? ' — above median' : ''}`)
+        if (avgEng > 0) metrics.push(`Engagement rate: ${fmtPct(avgEng)} overall`)
+        if (mf > 0) metrics.push(`+${fmtN(mf)} new followers in the period`)
+        if (aboveBenchmark > 0) metrics.push(`${aboveBenchmark} of ${mp.length} posts (${Math.round(aboveBenchmark / mp.length * 100)}%) hit top 25% or better`)
+        if (aboveTop10 > 0) metrics.push(`${aboveTop10} post${aboveTop10 > 1 ? 's' : ''} reached top 10% performance (${fmtN(BENCHMARKS.top10PerPost)}+ impressions)`)
+        return (
+          <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
+            <p className="font-semibold text-[#2D2D2D] mb-1">Key Metrics</p>
+            {firstDate && lastDate && <p className="text-xs text-[#6B6B6B] mb-3">{firstDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} – {lastDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>}
+            <div className="space-y-2">
+              {metrics.map((m, i) => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <Check className="w-4 h-4 text-[#6B6B6B] flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-[#4A4A4A]">{m}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {insights.length > 0 && (
         <div className="bg-white border border-[#E8ECF0] rounded-xl p-5">
@@ -2288,9 +2351,9 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
       {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#E8ECF0] flex flex-col flex-shrink-0 transition-transform duration-200 md:static md:w-44 md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="px-4 py-4 border-b border-[#EEF1F5] flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-2.5">
             <NotusLogo />
-            <p className="text-xs font-semibold text-[#2D2D2D] mt-2 truncate">{orgName}</p>
+            <p className="text-xs font-semibold text-[#2D2D2D] truncate">{orgName}</p>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="md:hidden p-1"><X className="w-4 h-4 text-[#6B6B6B]" /></button>
         </div>
