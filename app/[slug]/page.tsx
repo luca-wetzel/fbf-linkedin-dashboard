@@ -1263,17 +1263,19 @@ function ICPOverview({ members, orgIcpSignals, selectedMonth }: { members: Membe
             }))
             const maxVal = Math.max(...barData.map(d => d.signals), 1)
             return (
-              <div className="space-y-3">
+              <div key={selectedMonth} className="space-y-3">
                 {barData.map((d, i) => (
-                  <div key={d.month}>
+                  <div key={d.month} className="animate-fade-slide" style={{ animationDelay: `${i * 120}ms`, animationFillMode: 'both' }}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs text-[#4A4A4A]">{monthLabel(d.month)}</span>
                       <span className={`text-xs font-semibold ${i === 0 ? 'text-[#2D2D2D]' : 'text-[#A8A29E]'}`}>{d.signals} signals</span>
                     </div>
                     <div className="h-2.5 bg-[#EEF1F5] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all" style={{
+                      <div className="h-full rounded-full animate-bar-grow" style={{
                         width: `${(d.signals / maxVal) * 100}%`,
                         backgroundColor: i === 0 ? BRAND : '#C7BFB8',
+                        animationDelay: `${i * 120 + 100}ms`,
+                        animationFillMode: 'both',
                       }} />
                     </div>
                   </div>
@@ -1612,17 +1614,19 @@ function LeaderboardView({ members, selectedMonth, orgIcpSignals }: { members: M
             }))
             const maxVal = Math.max(...barData.map(d => d.impressions), 1)
             return (
-              <div className="space-y-3">
+              <div key={selectedMonth} className="space-y-3">
                 {barData.map((d, i) => (
-                  <div key={d.month}>
+                  <div key={d.month} className="animate-fade-slide" style={{ animationDelay: `${i * 120}ms`, animationFillMode: 'both' }}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs text-[#4A4A4A]">{monthLabel(d.month)}</span>
                       <span className={`text-xs font-semibold ${i === 0 ? 'text-[#2D2D2D]' : 'text-[#A8A29E]'}`}>{fmtN(d.impressions)} impressions</span>
                     </div>
                     <div className="h-2.5 bg-[#EEF1F5] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all" style={{
+                      <div className="h-full rounded-full animate-bar-grow" style={{
                         width: `${(d.impressions / maxVal) * 100}%`,
                         backgroundColor: i === 0 ? BRAND : '#C7BFB8',
+                        animationDelay: `${i * 120 + 100}ms`,
+                        animationFillMode: 'both',
                       }} />
                     </div>
                   </div>
