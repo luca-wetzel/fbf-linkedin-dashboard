@@ -1105,7 +1105,7 @@ function ICPOverview({ members, orgIcpSignals }: { members: Member[]; orgIcpSign
 
   return (
     <div className="space-y-4 pt-5 border-t border-[#EEF1F5]">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B]">ICP Overview — All Time</p>
+      <p className="text-sm font-semibold uppercase tracking-widest text-[#6B6B6B]">ICP Overview — All Time</p>
       <div className="grid grid-cols-2 gap-4">
         <StatCard label="Total ICP Signals" value={fmtN(total)} sub="All sources combined" />
         <StatCard label="Top Company" value={topCompany ?? '—'} sub={topCompany ? `${companyCounts[0][1]} signals` : 'No company data'} />
@@ -2091,7 +2091,7 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
         <div className="max-w-5xl mx-auto px-4 py-4 md:px-6 md:py-6">
           {activeTab === 'leaderboard' ? (
             <div className="flex items-center justify-between mb-4 md:mb-6">
-              <div><h1 className="text-xl md:text-2xl font-semibold text-[#2D2D2D]">Team</h1><p className="text-sm text-[#6B6B6B] mt-0.5">LinkedIn performance overview</p></div>
+              <div><h1 className="text-xl md:text-2xl font-semibold text-[#2D2D2D]">Team</h1><p className="text-base text-[#6B6B6B] mt-0.5">LinkedIn performance overview</p></div>
               {allMonthsAcross.length > 0 && (
                 <div className="relative hidden md:block">
                   <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
@@ -2105,12 +2105,12 @@ export default function OrgPage({ params }: { params: { slug: string } }) {
           ) : activeTab === 'icp' ? (
             <div className="mb-4 md:mb-6">
               <h1 className="text-xl md:text-2xl font-semibold text-[#2D2D2D]">ICP Pipeline</h1>
-              <p className="text-sm text-[#6B6B6B] mt-0.5">Signal tracking across all sources</p>
+              <p className="text-base text-[#6B6B6B] mt-0.5">Signal tracking across all sources</p>
             </div>
           ) : activeMember ? (
             <div className="mb-4 md:mb-6">
               <h1 className="text-xl md:text-2xl font-semibold text-[#2D2D2D]">{activeMember.name}</h1>
-              <p className="text-sm text-[#6B6B6B] mt-0.5">{activeMember.role || 'LinkedIn Performance'}</p>
+              <p className="text-base text-[#6B6B6B] mt-0.5">{activeMember.role || 'LinkedIn Performance'}</p>
             </div>
           ) : null}
 
