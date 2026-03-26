@@ -786,6 +786,80 @@ function ManageView({ members, orgName, onUpdate, onUpdateWithUndo, onDelete, on
           )}
         </div>
 
+        <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
+          <button onClick={() => setShowGoalPanel(s => !s)}
+            className="w-full flex items-center justify-between px-5 py-4 text-sm text-[#4A4A4A] hover:text-[#2D2D2D] transition-colors">
+            <span className="flex items-center gap-2"><BarChart2 className="w-4 h-4 text-[#D4D4D4]" />How to set LinkedIn goals</span>
+            <ChevronDown className={`w-4 h-4 text-[#D4D4D4] transition-transform ${showGoalPanel ? 'rotate-180' : ''}`} />
+          </button>
+          {showGoalPanel && (
+            <div className="px-5 pb-5 border-t border-[#EEF1F5] pt-4 space-y-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: BRAND }}>Set goals from Shield Index benchmarks</p>
+                <p className="text-xs text-[#6B6B6B] mb-3">Select a target tier and follower bracket. Goals auto-calculate based on LinkedIn industry benchmarks (Shield Index, Jan 2026).</p>
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label className="text-[10px] text-[#6B6B6B] block mb-1">Target Tier</label>
+                    <select value={shieldTier} onChange={e => setShieldTier(e.target.value as 'typical' | 'strong' | 'top')}
+                      className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-2.5 py-2 outline-none">
+                      <option value="typical">Top 50% (Typical)</option>
+                      <option value="strong">Top 25% (Strong)</option>
+                      <option value="top">Top 10% (Top)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#6B6B6B] block mb-1">Follower Bracket</label>
+                    <select value={shieldBracket} onChange={e => setShieldBracket(parseInt(e.target.value))}
+                      className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-2.5 py-2 outline-none">
+                      {SHIELD_INDEX.brackets.map((b, i) => <option key={i} value={i}>{b.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#6B6B6B] block mb-1">Posts / person / month</label>
+                    <input type="number" value={shieldPosts} onChange={e => setShieldPosts(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-2.5 py-2 outline-none" />
+                  </div>
+                </div>
+                {(() => {
+                  const bracket = SHIELD_INDEX.brackets[shieldBracket]
+                  const impPerPost = bracket[shieldTier]
+                  const calcGoals: MemberGoals = {
+                    monthlyPosts: shieldPosts,
+                    monthlyImpressions: shieldPosts * impPerPost,
+                    monthlyFollowers: SHIELD_INDEX.followerGrowth[shieldTier],
+                    monthlyIcpSignals: 20,
+                  }
+                  return (
+                    <div className="bg-[#FAF8F3] rounded-lg px-4 py-3 mb-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-2">Preview</p>
+                      <div className="grid grid-cols-4 gap-3 text-sm">
+                        <div><span className="text-[#6B6B6B] text-xs block">Posts</span><span className="font-semibold text-[#2D2D2D]">{calcGoals.monthlyPosts}/mo</span></div>
+                        <div><span className="text-[#6B6B6B] text-xs block">Impressions</span><span className="font-semibold text-[#2D2D2D]">{fmtN(calcGoals.monthlyImpressions)}/mo</span></div>
+                        <div><span className="text-[#6B6B6B] text-xs block">Followers</span><span className="font-semibold text-[#2D2D2D]">+{calcGoals.monthlyFollowers}/mo</span></div>
+                        <div><span className="text-[#6B6B6B] text-xs block">ICP Signals</span><span className="font-semibold text-[#2D2D2D]">{calcGoals.monthlyIcpSignals}/mo</span></div>
+                      </div>
+                      <p className="text-[10px] text-[#6B6B6B] mt-2">Based on {fmtN(impPerPost)} impressions/post ({bracket.label}, {shieldTier === 'typical' ? 'Top 50%' : shieldTier === 'strong' ? 'Top 25%' : 'Top 10%'})</p>
+                    </div>
+                  )
+                })()}
+                <button onClick={() => {
+                  const bracket = SHIELD_INDEX.brackets[shieldBracket]
+                  const impPerPost = bracket[shieldTier]
+                  onBulkGoals({
+                    monthlyPosts: shieldPosts,
+                    monthlyImpressions: shieldPosts * impPerPost,
+                    monthlyFollowers: SHIELD_INDEX.followerGrowth[shieldTier],
+                    monthlyIcpSignals: 20,
+                  })
+                }}
+                  className="text-sm font-medium px-4 py-2 rounded-lg text-white" style={{ backgroundColor: BRAND }}>
+                  Apply to all {members.length} members
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {members.length > 0 && (
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-3">Team Members</p>
@@ -857,7 +931,8 @@ function ManageView({ members, orgName, onUpdate, onUpdateWithUndo, onDelete, on
                           {([['monthlyPosts', 'Posts/mo'], ['monthlyImpressions', 'Impressions/mo'], ['monthlyFollowers', 'Followers/mo'], ['monthlyIcpSignals', 'ICP Signals/mo']] as const).map(([key, label]) => (
                             <div key={key}>
                               <label className="text-[10px] text-[#6B6B6B] block mb-1">{label}</label>
-                              <input type="number" value={draftGoals[key]} onChange={e => setDraftGoals(prev => ({ ...prev, [key]: parseInt(e.target.value) || 0 }))}
+                              <input type="text" inputMode="numeric" value={draftGoals[key].toLocaleString('de-DE')}
+                                onChange={e => setDraftGoals(prev => ({ ...prev, [key]: parseInt(e.target.value.replace(/\D/g, '')) || 0 }))}
                                 className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-2.5 py-1.5 outline-none" />
                             </div>
                           ))}
@@ -938,80 +1013,6 @@ function ManageView({ members, orgName, onUpdate, onUpdateWithUndo, onDelete, on
               }).catch(err => cb(false, (err as Error).message))
             }}
           />
-        </div>
-
-        <div className="bg-white border border-[#E8ECF0] rounded-xl overflow-hidden">
-          <button onClick={() => setShowGoalPanel(s => !s)}
-            className="w-full flex items-center justify-between px-5 py-4 text-sm text-[#4A4A4A] hover:text-[#2D2D2D] transition-colors">
-            <span className="flex items-center gap-2"><BarChart2 className="w-4 h-4 text-[#D4D4D4]" />How to set LinkedIn goals</span>
-            <ChevronDown className={`w-4 h-4 text-[#D4D4D4] transition-transform ${showGoalPanel ? 'rotate-180' : ''}`} />
-          </button>
-          {showGoalPanel && (
-            <div className="px-5 pb-5 border-t border-[#EEF1F5] pt-4 space-y-4">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: BRAND }}>Set goals from Shield Index benchmarks</p>
-                <p className="text-xs text-[#6B6B6B] mb-3">Select a target tier and follower bracket. Goals auto-calculate based on LinkedIn industry benchmarks (Shield Index, Jan 2026).</p>
-                <div className="grid grid-cols-3 gap-3 mb-3">
-                  <div>
-                    <label className="text-[10px] text-[#6B6B6B] block mb-1">Target Tier</label>
-                    <select value={shieldTier} onChange={e => setShieldTier(e.target.value as 'typical' | 'strong' | 'top')}
-                      className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-2.5 py-2 outline-none">
-                      <option value="typical">Top 50% (Typical)</option>
-                      <option value="strong">Top 25% (Strong)</option>
-                      <option value="top">Top 10% (Top)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-[#6B6B6B] block mb-1">Follower Bracket</label>
-                    <select value={shieldBracket} onChange={e => setShieldBracket(parseInt(e.target.value))}
-                      className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-2.5 py-2 outline-none">
-                      {SHIELD_INDEX.brackets.map((b, i) => <option key={i} value={i}>{b.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-[#6B6B6B] block mb-1">Posts / person / month</label>
-                    <input type="number" value={shieldPosts} onChange={e => setShieldPosts(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-2.5 py-2 outline-none" />
-                  </div>
-                </div>
-                {(() => {
-                  const bracket = SHIELD_INDEX.brackets[shieldBracket]
-                  const impPerPost = bracket[shieldTier]
-                  const calcGoals: MemberGoals = {
-                    monthlyPosts: shieldPosts,
-                    monthlyImpressions: shieldPosts * impPerPost,
-                    monthlyFollowers: SHIELD_INDEX.followerGrowth[shieldTier],
-                    monthlyIcpSignals: 20,
-                  }
-                  return (
-                    <div className="bg-[#FAF8F3] rounded-lg px-4 py-3 mb-3">
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B6B6B] mb-2">Preview</p>
-                      <div className="grid grid-cols-4 gap-3 text-sm">
-                        <div><span className="text-[#6B6B6B] text-xs block">Posts</span><span className="font-semibold text-[#2D2D2D]">{calcGoals.monthlyPosts}/mo</span></div>
-                        <div><span className="text-[#6B6B6B] text-xs block">Impressions</span><span className="font-semibold text-[#2D2D2D]">{fmtN(calcGoals.monthlyImpressions)}/mo</span></div>
-                        <div><span className="text-[#6B6B6B] text-xs block">Followers</span><span className="font-semibold text-[#2D2D2D]">+{calcGoals.monthlyFollowers}/mo</span></div>
-                        <div><span className="text-[#6B6B6B] text-xs block">ICP Signals</span><span className="font-semibold text-[#2D2D2D]">{calcGoals.monthlyIcpSignals}/mo</span></div>
-                      </div>
-                      <p className="text-[10px] text-[#6B6B6B] mt-2">Based on {fmtN(impPerPost)} impressions/post ({bracket.label}, {shieldTier === 'typical' ? 'Top 50%' : shieldTier === 'strong' ? 'Top 25%' : 'Top 10%'})</p>
-                    </div>
-                  )
-                })()}
-                <button onClick={() => {
-                  const bracket = SHIELD_INDEX.brackets[shieldBracket]
-                  const impPerPost = bracket[shieldTier]
-                  onBulkGoals({
-                    monthlyPosts: shieldPosts,
-                    monthlyImpressions: shieldPosts * impPerPost,
-                    monthlyFollowers: SHIELD_INDEX.followerGrowth[shieldTier],
-                    monthlyIcpSignals: 20,
-                  })
-                }}
-                  className="text-sm font-medium px-4 py-2 rounded-lg text-white" style={{ backgroundColor: BRAND }}>
-                  Apply to all {members.length} members
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {members.length > 0 && (
@@ -1823,7 +1824,8 @@ function MemberView({ member, goals, onGoalsChange }: {
             {(['monthlyPosts', 'monthlyImpressions', 'monthlyFollowers', 'monthlyIcpSignals'] as const).map(k => (
               <div key={k}>
                 <label className="text-xs text-[#6B6B6B] block mb-1">{k === 'monthlyPosts' ? 'Posts / month' : k === 'monthlyImpressions' ? 'Impressions / month' : k === 'monthlyFollowers' ? 'New Followers / month' : 'ICP Signals / month'}</label>
-                <input type="number" value={draftGoals[k]} onChange={e => setDraftGoals(prev => ({ ...prev, [k]: parseInt(e.target.value) || 0 }))}
+                <input type="text" inputMode="numeric" value={draftGoals[k].toLocaleString('de-DE')}
+                  onChange={e => setDraftGoals(prev => ({ ...prev, [k]: parseInt(e.target.value.replace(/\D/g, '')) || 0 }))}
                   className="w-full bg-[#FAF8F3] border border-[#E8ECF0] text-[#2D2D2D] text-sm rounded-lg px-3 py-2 outline-none" />
               </div>
             ))}
