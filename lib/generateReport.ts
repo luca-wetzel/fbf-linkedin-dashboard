@@ -221,7 +221,7 @@ function kpiBlock(doc: jsPDF, x: number, y: number, w: number, h: number, label:
 
 function sectionLabel(doc: jsPDF, x: number, y: number, text: string) {
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9)
+  doc.setFontSize(10)
   doc.setTextColor(...BRAND)
   doc.text(text.toUpperCase(), x, y)
 }
@@ -307,12 +307,12 @@ async function buildPage1(
     head: [head],
     body,
     headStyles: {
-      fillColor: BRAND, textColor: WHITE, fontSize: 8, fontStyle: 'bold',
-      cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 },
+      fillColor: BRAND, textColor: WHITE, fontSize: 9, fontStyle: 'bold',
+      cellPadding: { top: 4, bottom: 4, left: 4, right: 4 },
     },
     bodyStyles: {
-      fontSize: 9, textColor: MID,
-      cellPadding: { top: 4.5, bottom: 4.5, left: 4, right: 4 },
+      fontSize: 10, textColor: MID,
+      cellPadding: { top: 5, bottom: 5, left: 4, right: 4 },
     },
     alternateRowStyles: { fillColor: BG },
     columnStyles: {
@@ -328,7 +328,7 @@ async function buildPage1(
   let y = ((doc as any).lastAutoTable?.finalY ?? 140) + 3
 
   // Benchmark legend
-  doc.setFontSize(6.5)
+  doc.setFontSize(8)
   doc.setTextColor(...GRAY)
   doc.text(`notus benchmark (50K posts)   Top 10% = ${fmtN(BENCHMARKS.top10PerPost)}/post  ·  Top 25% = ${fmtN(BENCHMARKS.top25PerPost)}/post  ·  Top 50% = ${fmtN(BENCHMARKS.medianPerPost)}/post`, 14, y)
   y += 7
@@ -348,8 +348,8 @@ async function buildPage1(
     const barStartX = 52 // more room for month labels
     const valueX = PW - 14
     const barMax = valueX - barStartX - 16
-    const barH = 8
-    const rowH = barH + 4
+    const barH = 10
+    const rowH = barH + 5
 
     // Only show as many as fit
     const available = PH - y - 12
@@ -359,17 +359,17 @@ async function buildPage1(
     for (const pt of shown) {
       const bw = maxVal > 0 ? (pt.imp / maxVal) * barMax : 0
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(9)
+      doc.setFontSize(10)
       doc.setTextColor(...MID)
-      doc.text(monthLabel(pt.date), labelX, y + 5.5)
+      doc.text(monthLabel(pt.date), labelX, y + 7)
       if (bw > 0.5) {
         doc.setFillColor(...BRAND)
-        doc.roundedRect(barStartX, y, bw, barH, 2, 2, 'F')
+        doc.roundedRect(barStartX, y, bw, barH, 2.5, 2.5, 'F')
       }
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(9.5)
+      doc.setFontSize(10)
       doc.setTextColor(...DARK)
-      doc.text(fmtN(pt.imp), valueX, y + 5.5, { align: 'right' })
+      doc.text(fmtN(pt.imp), valueX, y + 7, { align: 'right' })
       y += rowH
     }
   }
@@ -429,8 +429,8 @@ function buildPage2(
     startY: compTableY,
     head: [['Company', 'Signals']],
     body: topComp.slice(0, 8).map(([c, n]) => [c, n.toString()]),
-    headStyles: { fillColor: BRAND, textColor: WHITE, fontSize: 8, fontStyle: 'bold', cellPadding: 3 },
-    bodyStyles: { fontSize: 8.5, textColor: MID, cellPadding: 3 },
+    headStyles: { fillColor: BRAND, textColor: WHITE, fontSize: 9, fontStyle: 'bold', cellPadding: 3.5 },
+    bodyStyles: { fontSize: 9.5, textColor: MID, cellPadding: 3.5 },
     alternateRowStyles: { fillColor: BG },
     styles: { lineWidth: 0 },
     margin: { left: 14, right: PW - 14 - halfW },
@@ -444,8 +444,8 @@ function buildPage2(
     startY: compTableY,
     head: [['Member', 'Signals', 'Companies']],
     body: icpRows.map(r => [r.name, r.total.toString(), r.comps.toString()]),
-    headStyles: { fillColor: BRAND, textColor: WHITE, fontSize: 8, fontStyle: 'bold', cellPadding: 3 },
-    bodyStyles: { fontSize: 8.5, textColor: MID, cellPadding: 3 },
+    headStyles: { fillColor: BRAND, textColor: WHITE, fontSize: 9, fontStyle: 'bold', cellPadding: 3.5 },
+    bodyStyles: { fontSize: 9.5, textColor: MID, cellPadding: 3.5 },
     alternateRowStyles: { fillColor: BG },
     styles: { lineWidth: 0 },
     margin: { left: 14 + halfW + 8, right: 14 },
@@ -598,8 +598,8 @@ function buildMemberPage(
         if (showIcpCol) row.push(d.icp > 0 ? d.icp.toString() : '–')
         return row
       }),
-      headStyles: { fillColor: BRAND, textColor: WHITE, fontSize: 8, fontStyle: 'bold', cellPadding: 3 },
-      bodyStyles: { fontSize: 8.5, textColor: MID, cellPadding: 3 },
+      headStyles: { fillColor: BRAND, textColor: WHITE, fontSize: 9, fontStyle: 'bold', cellPadding: 3.5 },
+      bodyStyles: { fontSize: 9.5, textColor: MID, cellPadding: 3.5 },
       alternateRowStyles: { fillColor: BG },
       styles: { lineWidth: 0 },
       margin: { left: 14, right: PW - 14 - colW },
