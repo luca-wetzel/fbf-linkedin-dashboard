@@ -1688,7 +1688,7 @@ function MemberView({ member, goals, onGoalsChange }: {
 
   const chartData = useMemo(() => {
     return [...mp].sort((a, b) => (parseFlexDate(a.date)?.getTime() ?? 0) - (parseFlexDate(b.date)?.getTime() ?? 0))
-      .map((p, i) => ({ i: i + 1, impressions: p.impressions }))
+      .map((p, i) => ({ i: i + 1, impressions: p.impressions, url: p.url }))
   }, [mp])
 
   const now = new Date()
@@ -1761,7 +1761,11 @@ function MemberView({ member, goals, onGoalsChange }: {
                 {chartData.map(p => (
                   <div key={p.i}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-[#4A4A4A]">Post {p.i}</span>
+                      {p.url ? (
+                        <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-xs hover:underline" style={{ color: BRAND }}>Post {p.i} ↗</a>
+                      ) : (
+                        <span className="text-xs text-[#4A4A4A]">Post {p.i}</span>
+                      )}
                       <span className="text-xs font-semibold text-[#2D2D2D]">{fmtN(p.impressions)} impressions</span>
                     </div>
                     <div className="h-2.5 bg-[#EEF1F5] rounded-full overflow-hidden relative">
